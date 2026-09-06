@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "proposal.schema.json",
+  "title": "Proposal",
+  "type": "object",
+  "required": ["schema_version", "proposal_id", "run_id", "iteration", "based_on_input_hash", "diagram", "changes"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "proposal_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "iteration": { "type": "integer", "minimum": 1 },
+    "based_on_input_hash": { "type": "string" },
+    "diagram": { "type": "string" },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "action", "from_path"],
+        "properties": {
+          "node_id": { "type": "string" },
+          "action": { "enum": ["move", "rename", "delete", "archive"] },
+          "from_path": { "type": "string" },
+          "to_path": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

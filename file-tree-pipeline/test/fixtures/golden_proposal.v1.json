@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "proposal_id": "ac43f034-c10f-4104-9c2d-c8ba9e9f8188",
+  "run_id": "fixture-run",
+  "iteration": 1,
+  "based_on_input_hash": "sha256:50f860fa73045123981d024ffff9daa82217a14cce88b576091968f9304d039a",
+  "diagram": "build/  # [DELETE] Directory name matches known cache/build output pattern\n  output.o  # [DELETE] Extension/location matches known build-output pattern\ndocs/  # [keep] No strong signal; default to keep\n  README.md  # [keep] Recognized documentation location/extension\nlogs/  # [keep] No strong signal; default to keep\n  app.log.2019  # [ARCHIVE -> _archive/logs/app.log.2019] Dated/old log file, likely safe to archive rather than keep in place\nnotes.txt.bak  # [ARCHIVE -> _archive/notes.txt.bak] Filename suffix indicates a manual backup copy\nsrc/  # [keep] No strong signal; default to keep\n  main.py  # [keep] Recognized source-code extension\n  main_copy.py  # [review] Content hash matches another file in the tree; flagged for human review before deletion",
+  "changes": [
+    {
+      "node_id": "sha256:44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66",
+      "action": "delete",
+      "from_path": "build",
+      "to_path": null
+    },
+    {
+      "node_id": "sha256:d31aef9e358703a6486daedab5f7698edbf86d1b33824eeb985fe1e48613ea30",
+      "action": "delete",
+      "from_path": "build/output.o",
+      "to_path": null
+    },
+    {
+      "node_id": "sha256:69fbf3b70d0d0fa2f7f351e2773d5902d555022fbb159b06ff021059e6b0922c",
+      "action": "archive",
+      "from_path": "logs/app.log.2019",
+      "to_path": "_archive/logs/app.log.2019"
+    },
+    {
+      "node_id": "sha256:cc116c7b4512c89ddd983b960eb5949dab1030834daebda87e1a85a8eb5679f5",
+      "action": "archive",
+      "from_path": "notes.txt.bak",
+      "to_path": "_archive/notes.txt.bak"
+    }
+  ]
+}

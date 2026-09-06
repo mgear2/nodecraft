@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tree_snapshot.schema.json",
+  "title": "TreeSnapshot",
+  "type": "object",
+  "required": ["schema_version", "run_id", "root_path", "generated_at", "nodes"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "run_id": { "type": "string" },
+    "root_path": { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "path", "type"],
+        "properties": {
+          "node_id": { "type": "string" },
+          "path": { "type": "string" },
+          "type": { "enum": ["file", "directory", "symlink"] },
+          "size_bytes": { "type": ["integer", "null"] },
+          "mtime": { "type": ["string", "null"], "format": "date-time" },
+          "ctime": { "type": ["string", "null"], "format": "date-time" },
+          "extension": { "type": ["string", "null"] },
+          "content_type": { "type": ["string", "null"] },
+          "content_hash": { "type": ["string", "null"] },
+          "symlink_target": { "type": ["string", "null"] },
+          "permissions": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

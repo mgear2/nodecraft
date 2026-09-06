@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "run_id": "fixture-run",
+  "input_hash": "sha256:c1ed13477c815a2b731b150c87aea1e26ed46368a301d31516d0319dc035c610",
+  "iteration": 1,
+  "classifications": [
+    {
+      "node_id": "sha256:44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66",
+      "purpose": "build/cache directory",
+      "category": "cache",
+      "recommended_action": "delete",
+      "target_path": null,
+      "confidence": 0.7,
+      "rationale": "Directory name matches known cache/build output pattern"
+    },
+    {
+      "node_id": "sha256:d31aef9e358703a6486daedab5f7698edbf86d1b33824eeb985fe1e48613ea30",
+      "purpose": "build artifact",
+      "category": "build_artifact",
+      "recommended_action": "delete",
+      "target_path": null,
+      "confidence": 0.85,
+      "rationale": "Extension/location matches known build-output pattern"
+    },
+    {
+      "node_id": "sha256:46b42b4229cd7a39c564e780bb665a8bde4fdf722007e8473f167fe53ed4b995",
+      "purpose": "directory",
+      "category": "unknown",
+      "recommended_action": "keep",
+      "target_path": null,
+      "confidence": 0.5,
+      "rationale": "No strong signal; default to keep"
+    },
+    {
+      "node_id": "sha256:0b5ca119d2be595aa307d34512d9679e49186307ef94201e4b3dfa079aa89938",
+      "purpose": "documentation",
+      "category": "docs",
+      "recommended_action": "keep",
+      "target_path": null,
+      "confidence": 0.8,
+      "rationale": "Recognized documentation location/extension"
+    },
+    {
+      "node_id": "sha256:98f38f12db221a8cf8ca7aadfdcd759b01d52eb4ebb3eedbb2d97e92805c6960",
+      "purpose": "directory",
+      "category": "unknown",
+      "recommended_action": "keep",
+      "target_path": null,
+      "confidence": 0.5,
+      "rationale": "No strong signal; default to keep"
+    },
+    {
+      "node_id": "sha256:69fbf3b70d0d0fa2f7f351e2773d5902d555022fbb159b06ff021059e6b0922c",
+      "purpose": "old log file",
+      "category": "cache",
+      "recommended_action": "archive",
+      "target_path": "_archive/logs/app.log.2019",
+      "confidence": 0.7,
+      "rationale": "Dated/old log file, likely safe to archive rather than keep in place"
+    },
+    {
+      "node_id": "sha256:cc116c7b4512c89ddd983b960eb5949dab1030834daebda87e1a85a8eb5679f5",
+      "purpose": "backup file",
+      "category": "cache",
+      "recommended_action": "archive",
+      "target_path": "_archive/notes.txt.bak",
+      "confidence": 0.75,
+      "rationale": "Filename suffix indicates a manual backup copy"
+    },
+    {
+      "node_id": "sha256:25a6634263c1b1f6fc4697a04e2b9904ea4b042a89af59dc93ec1f5d44848a26",
+      "purpose": "directory",
+      "category": "unknown",
+      "recommended_action": "keep",
+      "target_path": null,
+      "confidence": 0.5,
+      "rationale": "No strong signal; default to keep"
+    },
+    {
+      "node_id": "sha256:2e5ad92c43aa96cc3a9cef6c6aec998b216f1379c43b1f651013d25e55989312",
+      "purpose": "source code",
+      "category": "source",
+      "recommended_action": "keep",
+      "target_path": null,
+      "confidence": 0.9,
+      "rationale": "Recognized source-code extension"
+    },
+    {
+      "node_id": "sha256:dbb46a5c3c1dde41c39f7fa3bab89f20932237b7d1f2011dff7edc884b8e8a06",
+      "purpose": "duplicate content",
+      "category": "duplicate",
+      "recommended_action": "review",
+      "target_path": null,
+      "confidence": 0.6,
+      "rationale": "Content hash matches another file in the tree; flagged for human review before deletion"
+    }
+  ]
+}

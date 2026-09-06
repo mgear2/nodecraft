@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "approval_decision.schema.json",
+  "title": "ApprovalDecision",
+  "type": "object",
+  "required": ["schema_version", "proposal_id", "decision", "decided_at", "decided_by"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "proposal_id": { "type": "string" },
+    "decision": { "enum": ["approve", "reject"] },
+    "feedback": { "type": ["string", "null"] },
+    "decided_at": { "type": "string", "format": "date-time" },
+    "decided_by": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "decision": { "const": "reject" } } },
+      "then": { "required": ["feedback"] }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "classification.schema.json",
+  "title": "Classification",
+  "type": "object",
+  "required": ["schema_version", "run_id", "input_hash", "classifications"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "run_id": { "type": "string" },
+    "input_hash": { "type": "string" },
+    "iteration": { "type": "integer", "minimum": 1, "default": 1 },
+    "classifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "category", "recommended_action", "confidence", "rationale"],
+        "properties": {
+          "node_id": { "type": "string" },
+          "purpose": { "type": "string" },
+          "category": {
+            "enum": ["source", "config", "docs", "cache", "duplicate", "build_artifact", "unknown"]
+          },
+          "recommended_action": {
+            "enum": ["keep", "move", "rename", "delete", "archive", "review"]
+          },
+          "target_path": { "type": ["string", "null"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "rationale": { "type": "string" }
+        }
+      }
+    }
+  }
+}

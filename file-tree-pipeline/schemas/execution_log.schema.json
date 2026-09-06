@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "execution_log.schema.json",
+  "title": "ExecutionLog",
+  "type": "object",
+  "required": ["schema_version", "run_id", "proposal_id", "started_at", "completed_at", "operations"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "run_id": { "type": "string" },
+    "proposal_id": { "type": "string" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "completed_at": { "type": "string", "format": "date-time" },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "action", "from_path", "status"],
+        "properties": {
+          "node_id": { "type": "string" },
+          "action": { "enum": ["move", "rename", "delete", "archive"] },
+          "from_path": { "type": "string" },
+          "to_path": { "type": ["string", "null"] },
+          "status": { "enum": ["success", "failed", "skipped"] },
+          "error": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "undo_script_path": { "type": ["string", "null"] }
+  }
+}
