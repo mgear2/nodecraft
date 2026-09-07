@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chunk_manifest.schema.json",
+  "title": "TreeChunkManifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "root_path",
+    "generated_at",
+    "chunking",
+    "chunks"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "run_id": { "type": "string" },
+    "root_path": { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "required": ["artifact_type", "source_id"],
+      "properties": {
+        "artifact_type": { "const": "filesystem_scan" },
+        "source_id": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["source_artifacts"],
+      "properties": {
+        "source_artifacts": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": true
+    },
+    "chunking": {
+      "type": "object",
+      "required": ["strategy", "max_nodes", "max_bytes"],
+      "properties": {
+        "strategy": { "const": "dfs" },
+        "max_nodes": { "type": ["integer", "null"], "minimum": 1 },
+        "max_bytes": { "type": ["integer", "null"], "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "totals": {
+      "type": "object",
+      "required": ["node_count", "byte_count"],
+      "properties": {
+        "node_count": { "type": "integer", "minimum": 0 },
+        "byte_count": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "type": "object",
+      "required": [
+        "classification",
+        "total_chunks",
+        "completed_chunks",
+        "failed_chunks",
+        "updated_at"
+      ],
+      "properties": {
+        "classification": {
+          "enum": ["pending", "in_progress", "completed", "failed"]
+        },
+        "total_chunks": { "type": "integer", "minimum": 0 },
+        "completed_chunks": { "type": "integer", "minimum": 0 },
+        "failed_chunks": { "type": "integer", "minimum": 0 },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "error": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "chunks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "index",
+          "chunk_id",
+          "path",
+          "node_count",
+          "byte_count",
+          "content_hash",
+          "scopes"
+        ],
+        "properties": {
+          "index": { "type": "integer", "minimum": 1 },
+          "chunk_id": { "type": "string" },
+          "path": { "type": "string" },
+          "node_count": { "type": "integer", "minimum": 1 },
+          "byte_count": { "type": "integer", "minimum": 0 },
+          "content_hash": { "type": "string" },
+          "first_path": { "type": "string" },
+          "last_path": { "type": "string" },
+          "oversized": { "type": "boolean" },
+          "scopes": { "type": "array", "items": { "type": "string" } },
+          "classification": {
+            "type": "object",
+            "required": ["status", "path", "content_hash", "iteration"],
+            "properties": {
+              "status": { "enum": ["pending", "completed", "failed"] },
+              "path": { "type": "string" },
+              "content_hash": { "type": "string" },
+              "iteration": { "type": "integer", "minimum": 1 },
+              "error": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "entries": {
+    "notes.txt.bak": {
+      "size": 11,
+      "mtime_ns": 1788741325638018600,
+      "file_id": 0,
+      "hash": "sha256:5be9de60deabdff269157fb2ec64a5aaf7e50a5c0ec60390f32dce26f92bedca"
+    },
+    "build/output.o": {
+      "size": 0,
+      "mtime_ns": 1788741325636018600,
+      "file_id": 0,
+      "hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "docs/README.md": {
+      "size": 14,
+      "mtime_ns": 1788741325637018700,
+      "file_id": 0,
+      "hash": "sha256:e5ab3d5acb06ff6cfd0eb54fd6bfb4bcf919cd9459111baa951cd62f92a12b30"
+    },
+    "logs/app.log.2019": {
+      "size": 9,
+      "mtime_ns": 1788741325637018700,
+      "file_id": 0,
+      "hash": "sha256:0155f52afcef1668bb293b4a2dc719880eda4a42f17653eee068db12d86a1e53"
+    },
+    "src/main.py": {
+      "size": 16,
+      "mtime_ns": 1788741325639018600,
+      "file_id": 0,
+      "hash": "sha256:f697fb888d89d576cf3e8aecc33581d8c8117b02b2736d55b1e39f85de6c837c"
+    },
+    "src/main_copy.py": {
+      "size": 16,
+      "mtime_ns": 1788741325639018600,
+      "file_id": 0,
+      "hash": "sha256:f697fb888d89d576cf3e8aecc33581d8c8117b02b2736d55b1e39f85de6c837c"
+    }
+  }
+}

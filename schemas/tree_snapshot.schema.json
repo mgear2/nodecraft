@@ -28,6 +28,22 @@
       },
       "additionalProperties": true
     },
+    "chunk": {
+      "type": "object",
+      "required": ["index", "chunk_id", "node_count", "byte_count"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 1 },
+        "chunk_id": { "type": "string" },
+        "node_count": { "type": "integer", "minimum": 1 },
+        "byte_count": { "type": "integer", "minimum": 0 },
+        "max_nodes": { "type": ["integer", "null"], "minimum": 1 },
+        "max_bytes": { "type": ["integer", "null"], "minimum": 1 },
+        "oversized": { "type": "boolean" },
+        "first_path": { "type": "string" },
+        "last_path": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "nodes": {
       "type": "array",
       "items": {

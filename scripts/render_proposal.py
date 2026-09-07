@@ -11,6 +11,7 @@ themselves — built and unit-tested against fixture JSON.
 from __future__ import annotations
 
 import argparse
+import posixpath
 import sys
 from pathlib import Path
 from typing import Any
@@ -18,9 +19,72 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import trace  # noqa: E402
 from lib.metadata import validate_snapshot_classification_lineage  # noqa: E402
-from lib.validate import validate_file, write_validated  # noqa: E402
+from lib.validate import validate, validate_file, write_validated  # noqa: E402
 
 ACTIONABLE = {"move", "rename", "delete", "archive"}
+
+
+def _canonical_path(value: str) -> str:
+    """Canonicalize an artifact-relative POSIX path for conflict checks."""
+    path = value.replace("\\", "/")
+    if not path or path.startswith("/"):
+        raise ValueError(f"operation path must be relative: {value!r}")
+    normalized = posixpath.normpath(path)
+    if normalized == ".." or normalized.startswith("../"):
+        raise ValueError(f"operation path cannot escape its root: {value!r}")
+    return normalized
+
+
+def _reconcile_operations(changes: list[dict[str, Any]]) -> None:
+    """Reject operations that cannot be executed deterministically.
+
+    This is intentionally done after all chunks have been consumed: conflicts
+    between chunks are the reason reconciliation exists in the first place.
+    """
+    destinations: dict[str, dict[str, Any]] = {}
+    sources: list[tuple[str, dict[str, Any]]] = []
+    for change in changes:
+        source = _canonical_path(change["from_path"])
+        sources.append((source, change))
+        destination = change.get("to_path")
+        if destination is None:
+            continue
+        destination_key = _canonical_path(destination).casefold()
+        previous = destinations.get(destination_key)
+        if previous is not None:
+            raise ValueError(
+                "duplicate operation destination "
+                f"{destination!r} for {previous['node_id']!r} and {change['node_id']!r}"
+            )
+        destinations[destination_key] = change
+
+    previous_source: tuple[str, dict[str, Any]] | None = None
+    redundant_sources: set[int] = set()
+    ordered_sources = sorted(enumerate(sources), key=lambda item: item[1][0])
+    for index, (source, change) in ordered_sources:
+        if previous_source is not None:
+            previous_path, previous_change = previous_source
+            if source == previous_path or source.startswith(previous_path + "/"):
+                if (
+                    source.startswith(previous_path + "/")
+                    and previous_change["action"] in {"delete", "archive"}
+                    and change["action"] in {"delete", "archive"}
+                    and previous_change.get("to_path") is None
+                    and change.get("to_path") is None
+                ):
+                    redundant_sources.add(index)
+                    continue
+                raise ValueError(
+                    "overlapping source paths "
+                    f"{previous_path!r} ({previous_change['node_id']!r}) and "
+                    f"{source!r} ({change['node_id']!r})"
+                )
+        previous_source = (source, change)
+
+    if redundant_sources:
+        changes[:] = [
+            change for index, change in enumerate(changes) if index not in redundant_sources
+        ]
 
 
 def render_diagram(nodes_by_id: dict[str, dict], classifications: list[dict]) -> str:
@@ -71,6 +135,7 @@ def build_changes(
                 }
             )
     changes.sort(key=lambda ch: ch["from_path"])
+    _reconcile_operations(changes)
     return changes
 
 
@@ -103,6 +168,125 @@ def render_proposal(snapshot: dict, classification: dict, iteration: int | None 
             }
         ]
     }
+    validate(result, "proposal")
+    return result
+
+
+def render_manifest_proposal(
+    manifest_path: str | Path,
+    *,
+    iteration: int = 1,
+    subtree_path: str = ".",
+) -> dict:
+    """Render directly from manifest chunks without assembling a snapshot.
+
+    The proposal itself necessarily contains the operator-facing diagram and
+    changes, but no intermediate tree snapshot or aggregate classification is
+    constructed.  Chunks and their classification artifacts are consumed one
+    at a time in manifest order.
+    """
+
+    manifest_file = Path(manifest_path)
+    manifest = validate_file(manifest_file, "chunk_manifest")
+    if manifest.get("status", {}).get("classification") != "completed":
+        raise ValueError("manifest classification is not complete")
+    requested = subtree_path.strip("/").replace("\\", "/") or "."
+    if requested == ".":
+        scope_path = "."
+    else:
+        scope_path = requested
+    lines: list[tuple[str, str]] = []
+    changes: list[dict[str, Any]] = []
+    source_artifacts: list[dict[str, Any]] = []
+    for entry in manifest["chunks"]:
+        classification_info = entry.get("classification")
+        if not classification_info or classification_info["iteration"] != iteration:
+            raise ValueError(
+                f"chunk {entry['chunk_id']} has no classification for iteration {iteration}"
+            )
+        chunk = validate_file(manifest_file.parent / entry["path"], "tree_snapshot")
+        classification_path = manifest_file.parent / classification_info["path"]
+        classification = validate_file(classification_path, "classification")
+        if classification["run_id"] != manifest["run_id"]:
+            raise ValueError(f"classification run_id does not match chunk {entry['chunk_id']}")
+        if classification["input_hash"] != trace.hash_json_artifact(chunk):
+            raise ValueError(f"classification input_hash does not match chunk {entry['chunk_id']}")
+        if classification["iteration"] != iteration:
+            raise ValueError(f"classification iteration does not match chunk {entry['chunk_id']}")
+        classification_hash = trace.hash_json_artifact(classification)
+        if classification_info["content_hash"] != classification_hash:
+            raise ValueError(f"classification content_hash does not match chunk {entry['chunk_id']}")
+        chunk_provenance = {
+            "artifact_type": "classification",
+            "run_id": classification["run_id"],
+            "content_hash": classification_hash,
+            "path": classification_info["path"],
+            "chunk_id": entry["chunk_id"],
+            "chunk_path": entry["path"],
+            "chunk_content_hash": entry["content_hash"],
+        }
+        source_artifacts.append(
+            chunk_provenance
+        )
+        class_by_id = {item["node_id"]: item for item in classification["classifications"]}
+        for node in chunk["nodes"]:
+            path = node["path"]
+            if scope_path != "." and path != scope_path and not path.startswith(scope_path + "/"):
+                continue
+            relative_path = path
+            if scope_path != ".":
+                relative_path = "." if path == scope_path else path[len(scope_path) + 1 :]
+            item = class_by_id.get(node["node_id"])
+            if item is None:
+                continue
+            depth = relative_path.count("/")
+            name = Path(relative_path).name
+            marker = "/" if node["type"] == "directory" else ""
+            action = item["recommended_action"]
+            rationale = item["rationale"]
+            if action in ACTIONABLE:
+                target = f" -> {item['target_path']}" if item.get("target_path") else ""
+                rendered = f"{'  ' * depth}{name}{marker}  # [{action.upper()}{target}] {rationale}"
+                changes.append(
+                    {
+                        "node_id": item["node_id"],
+                        "action": action,
+                        "from_path": relative_path,
+                        "to_path": item.get("target_path"),
+                        "provenance": {
+                            "source_artifacts": [
+                                {
+                                    **chunk_provenance,
+                                    "node_id": item["node_id"],
+                                }
+                            ]
+                        },
+                    }
+                )
+            else:
+                rendered = f"{'  ' * depth}{name}{marker}  # [{action}] {rationale}"
+            lines.append((relative_path, rendered))
+    lines.sort(key=lambda item: item[0])
+    changes.sort(key=lambda item: item["from_path"])
+    _reconcile_operations(changes)
+    based_on = trace.hash_json_artifact({"source_artifacts": source_artifacts})
+    result = {
+        "schema_version": trace.SCHEMA_VERSION,
+        "proposal_id": trace.new_proposal_id(),
+        "run_id": manifest["run_id"],
+        "iteration": iteration,
+        "based_on_input_hash": based_on,
+        "diagram": "\n".join(line for _, line in lines),
+        "changes": changes,
+        "provenance": {"source_artifacts": source_artifacts},
+    }
+    if scope_path != ".":
+        result["scope"] = {
+            "root_path": manifest["root_path"],
+            "subtree_path": scope_path,
+            "path_format": "posix",
+        }
+    validate(result, "proposal")
     return result
 
 

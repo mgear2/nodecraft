@@ -25,6 +25,7 @@ uv run ty check
 # Suppress progress output (useful for CI/scripts)
 uv run python cli.py run /path/to/directory --auto-approve --quiet
 uv run python cli.py scan /path/to/directory --quiet
+uv run python cli.py classify-chunks runs/<run_id>/chunks/manifest.json
 
 # Large trees: skip hashing files above 100 MB and reuse the persistent cache
 uv run python cli.py scan /path/to/directory --hash-mode conditional --max-hash-size 100MB
@@ -41,14 +42,11 @@ uv run python cli.py run /path/to/directory --subtree src --auto-approve
 
 # Individual stages (mirrors the T1-T7 pipeline):
 uv run python cli.py scan /path/to/directory --dry-run
-uv run python cli.py classify runs/<run_id>/tree_snapshot.json --dry-run
-uv run python cli.py render runs/<run_id>/tree_snapshot.json runs/<run_id>/classification.v1.json --dry-run
-uv run python cli.py approve runs/<run_id>/proposal.v1.json --decision approve
-uv run python cli.py execute /path/to/directory runs/<run_id>/proposal.v1.json runs/<run_id>/approval_decision.v1.json --dry-run
-uv run python cli.py summarize runs/<run_id>/execution_log.json --dry-run
-# Derive immutable subtree snapshot/classification/report artifacts
-uv run python cli.py summarize-subtree \
-  runs/<run_id>/tree_snapshot.json runs/<run_id>/classification.v1.json src
+uv run python cli.py classify runs/<run_id>/chunks/chunk-000001-*.json --dry-run
+uv run python cli.py render <chunk.json> <classification.json> --dry-run
+# Scan directly into independently classifiable chunks
+uv run python cli.py scan /path/to/directory \
+  --max-nodes 10000 --max-bytes 8MB
 ```
 
 Use `uv sync --extra llm` to install the optional Anthropic dependency needed
@@ -73,6 +71,18 @@ duplicate, or existing output paths. Use `--dry-run` to inspect the report
 without writing the derived snapshot, classification, or report. A missing
 subtree path is an error.
 
+`scan` writes a bounded-memory depth-first stream of schema-valid tree chunks
+to `runs/<run_id>/chunks/manifest.json` and the adjacent chunk files. Each
+chunk carries node/byte budgets, provenance, first/last paths, and an
+oversized marker for a single node that cannot fit the configured budget. The
+manifest is written last and references content hashes for every chunk, so
+chunks can be classified independently as soon as they appear.
+
+`classify-chunks` consumes that manifest one chunk at a time, writes schema-valid
+classification artifacts under `chunks/classifications/`, and atomically updates
+the manifest with per-chunk and aggregate classification status. The full
+orchestrator uses this same path; it never reassembles a giant snapshot.
+
 On Windows, scanner availability is checked with `GetFileAttributesW` only
 (file content is never opened for this check). Cloud-only placeholders are
 marked with `availability: "cloud_only"` and are never hashed. Pass
@@ -87,7 +97,7 @@ lib/
   validate.py         schema validation utility (I2)
   trace.py            run_id / timestamps / hashing utility (I3)
 scripts/
-  scan.py             Scanner — T1, deterministic (I4)
+  scan.py             Streaming chunk scanner — T1, deterministic (I4)
   render_proposal.py  Proposal Renderer — T3, deterministic (I6)
   approve.py          Approval capture — T4, human gate (I7)
   execute.py          Executor — T6, deterministic, only script that mutates disk (I9)

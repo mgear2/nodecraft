@@ -9,6 +9,8 @@ so a schema change only has to be reflected in one place.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,7 @@ _SCHEMA_FILENAMES = {
     "approval_decision": "approval_decision.schema.json",
     "execution_log": "execution_log.schema.json",
     "subtree_report": "subtree_report.schema.json",
+    "chunk_manifest": "chunk_manifest.schema.json",
 }
 
 _validator_cache: dict[str, Any] = {}
@@ -81,10 +84,21 @@ def validate_file(path: str | Path, schema_name: str) -> dict[str, Any]:
 
 
 def write_validated(artifact: dict[str, Any], schema_name: str, path: str | Path) -> None:
-    """Validate then write. Never writes an artifact that fails its schema."""
+    """Validate then atomically write. Never leaves a partial artifact behind."""
     validate(artifact, schema_name)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(artifact, f, indent=2, sort_keys=False)
-        f.write("\n")
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(artifact, f, indent=2, sort_keys=False)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary_name, path)
+    except BaseException:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+        raise

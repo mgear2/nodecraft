@@ -24,16 +24,19 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from agent.classify import HeuristicBackend, LLMBackend, classify_all  # noqa: E402
+from agent.classify import HeuristicBackend, LLMBackend, classify_manifest  # noqa: E402
 from lib import trace  # noqa: E402
-from lib.metadata import normalize_subtree_path  # noqa: E402
 from lib.progress import Progress  # noqa: E402
 from lib.validate import write_validated  # noqa: E402
 from scripts.execute import execute_proposal  # noqa: E402
-from scripts.render_proposal import render_proposal  # noqa: E402
-from scripts.scan import DEFAULT_MAX_HASH_SIZE, build_snapshot  # noqa: E402
+from scripts.render_proposal import render_manifest_proposal  # noqa: E402
+from scripts.scan import (  # noqa: E402
+    DEFAULT_MAX_BYTES,
+    DEFAULT_MAX_HASH_SIZE,
+    DEFAULT_MAX_NODES,
+    scan_tree_to_chunks,
+)
 from scripts.summarize import build_manifest, render_summary_md  # noqa: E402
-from scripts.summarize_subtree import build_subtree_snapshot  # noqa: E402
 
 
 class MaxIterationsExceeded(Exception):
@@ -54,6 +57,8 @@ def run_pipeline(
     cache_enabled: bool = True,
     skip_cloud_only: bool = False,
     subtree_path: str = ".",
+    max_nodes: int = DEFAULT_MAX_NODES,
+    max_bytes: int = DEFAULT_MAX_BYTES,
 ) -> dict:
     """Runs T1 -> T2 -> (T3 -> T4 -> [T5 -> T3]*)+ -> T6 -> T7.
 
@@ -72,27 +77,34 @@ def run_pipeline(
     rdir = trace.run_dir(runs_dir, run_id)
     artifacts: dict[str, str] = {}
 
-    # T1
+    # T1: scan directly to independently classifiable chunks.  Chunks remain
+    # on disk and are consumed one at a time by T2; no giant snapshot is built.
     progress.stage("scanning")
-    snapshot = build_snapshot(
-        root_path, run_id, progress=progress, hash_mode=hash_mode,
-        max_hash_size=max_hash_size, cache_path=cache_path,
+    chunk_dir = rdir / "chunks"
+    scan_tree_to_chunks(
+        root_path,
+        run_id,
+        chunk_dir,
+        progress=progress,
+        hash_mode=hash_mode,
+        max_hash_size=max_hash_size,
+        cache_path=cache_path,
         cache_enabled=cache_enabled,
         skip_cloud_only=skip_cloud_only,
+        max_nodes=max_nodes,
+        max_bytes=max_bytes,
     )
-    subtree = normalize_subtree_path(subtree_path)
-    if subtree != ".":
-        snapshot = build_subtree_snapshot(snapshot, subtree)
-    snap_path = rdir / "tree_snapshot.json"
-    write_validated(snapshot, "tree_snapshot", snap_path)
-    artifacts["tree_snapshot"] = str(snap_path)
+    artifacts["chunk_manifest"] = str(chunk_dir / "manifest.json")
 
     # T2
     progress.stage("classifying")
-    classification = classify_all(snapshot, backend, iteration=1, progress=progress)
-    class_path = rdir / "classification.v1.json"
-    write_validated(classification, "classification", class_path)
-    artifacts["classification.v1"] = str(class_path)
+    classify_manifest(
+        chunk_dir / "manifest.json",
+        backend=backend,
+        iteration=1,
+        progress=progress,
+    )
+    artifacts["classification.v1.chunks"] = str(chunk_dir / "classifications")
 
     iteration = 1
     proposal = None
@@ -106,7 +118,11 @@ def run_pipeline(
             )
 
         # T3
-        proposal = render_proposal(snapshot, classification, iteration=iteration)
+        proposal = render_manifest_proposal(
+            chunk_dir / "manifest.json",
+            iteration=iteration,
+            subtree_path=subtree_path,
+        )
         progress.stage(f"rendering proposal (iteration {iteration})")
         proposal_path = rdir / f"proposal.v{iteration}.json"
         write_validated(proposal, "proposal", proposal_path)
@@ -125,17 +141,20 @@ def run_pipeline(
         # reject -> T5, new iteration (new node instance, not a back-edge;
         # see spec B.3)
         iteration += 1
-        classification = classify_all(
-            snapshot, backend, feedback=approval.get("feedback"), iteration=iteration,
+        classify_manifest(
+            chunk_dir / "manifest.json",
+            backend=backend,
+            feedback=approval.get("feedback"),
+            iteration=iteration,
             progress=progress,
         )
-        class_path = rdir / f"classification.v{iteration}.json"
-        write_validated(classification, "classification", class_path)
-        artifacts[f"classification.v{iteration}"] = str(class_path)
+        artifacts[f"classification.v{iteration}.chunks"] = str(chunk_dir / "classifications")
 
     # T6
     progress.stage("executing approved changes")
-    log, undo_script = execute_proposal(root_path, proposal, approval, permanent_delete)
+    log, undo_script = execute_proposal(
+        str(Path(root_path).resolve()), proposal, approval, permanent_delete
+    )
     undo_path = rdir / "undo.py"
     undo_path.write_text(undo_script)
     undo_path.chmod(0o755)
@@ -182,7 +201,9 @@ def main() -> None:
     parser.add_argument("--quiet", action="store_true", help="suppress progress output")
     parser.add_argument("--hash-mode", choices=["full", "conditional", "none"], default="full")
     from scripts.scan import parse_size
+
     parser.add_argument("--max-hash-size", type=parse_size, default=DEFAULT_MAX_HASH_SIZE)
+    parser.add_argument("--max-bytes", type=parse_size, default=DEFAULT_MAX_BYTES)
     parser.add_argument("--cache-path", default=None)
     parser.add_argument("--no-cache", action="store_true")
     parser.add_argument(
@@ -195,6 +216,7 @@ def main() -> None:
         default=".",
         help="run the pipeline as a canonical tree rooted at this relative subtree",
     )
+    parser.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES)
     parser.add_argument(
         "--auto-approve",
         action="store_true",
@@ -231,6 +253,8 @@ def main() -> None:
         cache_enabled=not args.no_cache,
         skip_cloud_only=args.skip_cloud_only,
         subtree_path=args.subtree,
+        max_nodes=args.max_nodes,
+        max_bytes=args.max_bytes,
     )
 
     print(f"\nrun_id={result['run_id']}")

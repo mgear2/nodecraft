@@ -260,9 +260,98 @@ def classify_all(
     return result
 
 
+def classify_manifest(
+    manifest_path: str | Path,
+    *,
+    backend: ClassifierBackend,
+    iteration: int = 1,
+    feedback: str | None = None,
+    output_dir: str | Path | None = None,
+    progress: Progress | None = None,
+) -> list[Path]:
+    """Classify each manifest chunk independently.
+
+    Only one bounded chunk and its classification are resident at a time.  The
+    manifest is atomically updated after each chunk, so an interrupted pass
+    leaves an accurate resumable status and never requires a full snapshot.
+    """
+
+    manifest_file = Path(manifest_path)
+    manifest = validate_file(manifest_file, "chunk_manifest")
+    chunk_root = manifest_file.parent
+    destination = Path(output_dir) if output_dir else chunk_root / "classifications"
+    destination.mkdir(parents=True, exist_ok=True)
+    entries = manifest["chunks"]
+    status = manifest.setdefault("status", {})
+    status.update(
+        {
+            "classification": "in_progress",
+            "total_chunks": len(entries),
+            "completed_chunks": 0,
+            "failed_chunks": 0,
+            "updated_at": trace.now_iso(),
+        }
+    )
+    status.pop("error", None)
+    write_validated(manifest, "chunk_manifest", manifest_file)
+
+    reporter = progress or Progress(quiet=True)
+    items = reporter.items("classifying chunks", len(entries))
+    outputs: list[Path] = []
+    try:
+        for entry in entries:
+            chunk_path = chunk_root / entry["path"]
+            chunk = validate_file(chunk_path, "tree_snapshot")
+            result = classify_all(
+                chunk,
+                backend,
+                feedback=feedback,
+                iteration=iteration,
+                progress=Progress(quiet=True),
+            )
+            result["provenance"]["source_artifacts"][0]["path"] = entry["path"]
+            result["provenance"]["source_artifacts"][0]["chunk_id"] = entry["chunk_id"]
+            output = destination / f"{Path(entry['path']).stem}.classification.v{iteration}.json"
+            write_validated(result, "classification", output)
+            try:
+                relative_output = output.relative_to(chunk_root).as_posix()
+            except ValueError:
+                # A caller may intentionally place classifications outside
+                # the chunk directory; retain an explicit provenance path.
+                relative_output = str(output.resolve())
+            entry["classification"] = {
+                "status": "completed",
+                "path": relative_output,
+                "content_hash": trace.hash_json_artifact(result),
+                "iteration": iteration,
+            }
+            status["completed_chunks"] += 1
+            status["updated_at"] = trace.now_iso()
+            write_validated(manifest, "chunk_manifest", manifest_file)
+            outputs.append(output)
+            items.update()
+    except Exception as error:
+        status["classification"] = "failed"
+        status["failed_chunks"] = len(entries) - status["completed_chunks"]
+        status["error"] = str(error)
+        status["updated_at"] = trace.now_iso()
+        write_validated(manifest, "chunk_manifest", manifest_file)
+        raise
+    finally:
+        items.finish()
+
+    status["classification"] = "completed"
+    status["updated_at"] = trace.now_iso()
+    write_validated(manifest, "chunk_manifest", manifest_file)
+    return outputs
+
+
+classify_chunks = classify_manifest
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="I5/T2: classify nodes in a tree_snapshot")
-    parser.add_argument("snapshot_path")
+    parser.add_argument("snapshot_path", nargs="?")
     parser.add_argument("--out", default=None)
     parser.add_argument("--backend", choices=["heuristic", "llm"], default="heuristic")
     parser.add_argument(
@@ -271,7 +360,27 @@ def main() -> None:
     parser.add_argument("--iteration", type=int, default=1)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--quiet", action="store_true", help="suppress progress output")
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help="classify each chunk referenced by a chunk manifest instead of one snapshot",
+    )
     args = parser.parse_args()
+
+    if args.manifest:
+        backend = HeuristicBackend() if args.backend == "heuristic" else LLMBackend()
+        outputs = classify_manifest(
+            args.manifest,
+            backend=backend,
+            iteration=args.iteration,
+            feedback=args.feedback,
+            progress=Progress(args.quiet),
+        )
+        print(f"classified {len(outputs)} chunks")
+        return
+
+    if not args.snapshot_path:
+        parser.error("snapshot_path is required unless --manifest is provided")
 
     snapshot = validate_file(args.snapshot_path, "tree_snapshot")
     backend: ClassifierBackend = HeuristicBackend() if args.backend == "heuristic" else LLMBackend()

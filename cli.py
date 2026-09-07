@@ -21,7 +21,8 @@ def main() -> None:
         print(__doc__)
         print(
             "Usage: filetree "
-            "<run|scan|classify|render|approve|execute|summarize|summarize-subtree> [args...]"
+            "<run|scan|classify|classify-chunks|render|approve|execute|"
+            "summarize|summarize-subtree> [args...]"
         )
         sys.exit(1)
 
@@ -40,6 +41,18 @@ def main() -> None:
     elif command == "classify":
         import agent.classify as classify
 
+        classify.main()
+    elif command == "classify-chunks":
+        import agent.classify as classify
+
+        if rest == ["--help"] or rest == ["-h"]:
+            sys.argv = ["filetree classify", "--help"]
+            classify.main()
+            return
+        if not rest:
+            print("Usage: filetree classify-chunks MANIFEST_PATH [options]")
+            sys.exit(1)
+        sys.argv = ["filetree classify", "--manifest", rest[0]] + rest[1:]
         classify.main()
     elif command == "revise":
         import agent.revise as revise
