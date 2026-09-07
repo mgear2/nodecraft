@@ -49,6 +49,21 @@ uv run python cli.py scan /path/to/directory \
 Use `uv sync --extra llm` to install the optional Anthropic dependency needed
 by `--backend llm`.
 
+For local inference, run Ollama separately (Docker Desktop/WSL2 works well),
+then select the dependency-free HTTP backend:
+
+```sh
+docker run -d --name ollama --gpus=all -p 11434:11434 \
+  -v ollama:/root/.ollama ollama/ollama
+docker exec -it ollama ollama pull llama3.1
+uv run python cli.py run /path/to/directory --backend ollama --model llama3.1
+```
+
+The default endpoint is `http://localhost:11434`; override it with
+`--ollama-url` when Nodecraft runs in another container or WSL network
+namespace. The Ollama backend uses `/api/generate`, requests JSON output, and
+retries responses that fail the classifier shape validation.
+
 Hashing is full and exact by default. For large trees, `--hash-mode conditional`
 hashes only files at or below `--max-hash-size` (supports bytes or `KB`, `MB`,
 and `GB` suffixes), while `--hash-mode none` skips content reads entirely.

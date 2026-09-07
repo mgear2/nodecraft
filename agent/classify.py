@@ -18,6 +18,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Protocol
+from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import trace  # noqa: E402
@@ -216,6 +217,73 @@ class LLMBackend:
         return base
 
 
+class OllamaBackend:
+    """Local Ollama backend using its HTTP generate API.
+
+    Ollama runs independently (for example in Docker Desktop/WSL) and is
+    contacted without adding a Python client dependency to the project.
+    """
+
+    def __init__(
+        self,
+        model: str = "llama3.1",
+        base_url: str = "http://localhost:11434",
+        max_retries: int = 2,
+        timeout: float = 120.0,
+    ):
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.max_retries = max_retries
+        self.timeout = timeout
+
+    def classify_node(self, node: dict, all_nodes: list[dict], feedback: str | None = None) -> dict:
+        del all_nodes
+        prompt = LLMBackend._build_prompt(node, feedback)
+        last_error: Exception | None = None
+        for _ in range(self.max_retries + 1):
+            payload = json.dumps(
+                {
+                    "model": self.model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json",
+                }
+            ).encode("utf-8")
+            request = Request(
+                f"{self.base_url}/api/generate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlopen(request, timeout=self.timeout) as response:
+                response_data = json.loads(response.read().decode("utf-8"))
+            try:
+                data = json.loads(response_data["response"])
+                _validate_shape(data)
+                return data
+            except (KeyError, json.JSONDecodeError, TypeError, ValueError) as error:
+                last_error = error
+                prompt += f"\n\nYour previous response was invalid ({error}). Return only JSON."
+        raise RuntimeError(
+            f"Ollama classifier failed schema validation after retries: {last_error}"
+        )
+
+
+def build_backend(
+    name: str,
+    *,
+    model: str | None = None,
+    ollama_url: str = "http://localhost:11434",
+) -> ClassifierBackend:
+    if name == "heuristic":
+        return HeuristicBackend()
+    if name == "llm":
+        return LLMBackend(model=model or "claude-sonnet-4-6")
+    if name == "ollama":
+        return OllamaBackend(model=model or "llama3.1", base_url=ollama_url)
+    raise ValueError(f"unknown classifier backend: {name}")
+
+
 def _validate_shape(data: dict) -> None:
     if data.get("category") not in VALID_CATEGORIES:
         raise ValueError(f"invalid category: {data.get('category')}")
@@ -368,7 +436,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="I5/T2: classify nodes in a tree_snapshot")
     parser.add_argument("snapshot_path", nargs="?")
     parser.add_argument("--out", default=None)
-    parser.add_argument("--backend", choices=["heuristic", "llm"], default="heuristic")
+    parser.add_argument("--backend", choices=["heuristic", "llm", "ollama"], default="heuristic")
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--ollama-url", default="http://localhost:11434")
     parser.add_argument(
         "--feedback", default=None, help="operator feedback for a revision pass (T5)"
     )
@@ -383,7 +453,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.manifest:
-        backend = HeuristicBackend() if args.backend == "heuristic" else LLMBackend()
+        backend = build_backend(args.backend, model=args.model, ollama_url=args.ollama_url)
         outputs = classify_manifest(
             args.manifest,
             backend=backend,
@@ -398,7 +468,7 @@ def main() -> None:
         parser.error("snapshot_path is required unless --manifest is provided")
 
     snapshot = validate_file(args.snapshot_path, "tree_snapshot")
-    backend: ClassifierBackend = HeuristicBackend() if args.backend == "heuristic" else LLMBackend()
+    backend = build_backend(args.backend, model=args.model, ollama_url=args.ollama_url)
     result = classify_all(
         snapshot, backend, feedback=args.feedback, iteration=args.iteration,
         progress=Progress(args.quiet),

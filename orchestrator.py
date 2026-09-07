@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from agent.classify import HeuristicBackend, LLMBackend, classify_manifest  # noqa: E402
+from agent.classify import build_backend, classify_manifest  # noqa: E402
 from lib import trace  # noqa: E402
 from lib.progress import Progress  # noqa: E402
 from lib.validate import write_validated  # noqa: E402
@@ -48,6 +48,8 @@ def run_pipeline(
     root_path: str,
     approval_callback,
     backend_name: str = "heuristic",
+    model: str | None = None,
+    ollama_url: str = "http://localhost:11434",
     max_iterations: int = 5,
     runs_dir: str = "runs",
     permanent_delete: bool = False,
@@ -71,7 +73,7 @@ def run_pipeline(
     Returns a dict summarizing the run: run_id, iterations, final proposal,
     execution log, and paths to all written artifacts.
     """
-    backend = HeuristicBackend() if backend_name == "heuristic" else LLMBackend()
+    backend = build_backend(backend_name, model=model, ollama_url=ollama_url)
     progress = progress or Progress(quiet=True)
 
     run_id = trace.new_run_id()
@@ -197,7 +199,9 @@ def interactive_approval_callback(proposal: dict) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description="I16: run the full file-tree pipeline")
     parser.add_argument("root_path")
-    parser.add_argument("--backend", choices=["heuristic", "llm"], default="heuristic")
+    parser.add_argument("--backend", choices=["heuristic", "llm", "ollama"], default="heuristic")
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--ollama-url", default="http://localhost:11434")
     parser.add_argument("--max-iterations", type=int, default=5)
     parser.add_argument("--runs-dir", default="runs")
     parser.add_argument("--permanent-delete", action="store_true")
@@ -246,6 +250,8 @@ def main() -> None:
         args.root_path,
         callback,
         backend_name=args.backend,
+        model=args.model,
+        ollama_url=args.ollama_url,
         max_iterations=args.max_iterations,
         runs_dir=args.runs_dir,
         permanent_delete=args.permanent_delete,
