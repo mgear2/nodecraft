@@ -59,6 +59,10 @@ class HeuristicBackend:
             self._hash_counts = m
         return self._hash_counts
 
+    def set_global_duplicate_map(self, duplicate_map: dict[str, list[str]]) -> None:
+        """Supply duplicate context collected across all streamed chunks."""
+        self._hash_counts = duplicate_map
+
     def classify_node(self, node: dict, all_nodes: list[dict], feedback: str | None = None) -> dict:
         path = node["path"]
         ext = (node.get("extension") or "").lower()
@@ -299,6 +303,17 @@ def classify_manifest(
     items = reporter.items("classifying chunks", len(entries))
     outputs: list[Path] = []
     try:
+        duplicate_map: dict[str, list[str]] = {}
+        for entry in entries:
+            chunk = validate_file(chunk_root / entry["path"], "tree_snapshot")
+            for node in chunk["nodes"]:
+                content_hash = node.get("content_hash")
+                if content_hash:
+                    duplicate_map.setdefault(content_hash, []).append(node["node_id"])
+        set_global_duplicate_map = getattr(backend, "set_global_duplicate_map", None)
+        if callable(set_global_duplicate_map):
+            set_global_duplicate_map(duplicate_map)
+
         for entry in entries:
             chunk_path = chunk_root / entry["path"]
             chunk = validate_file(chunk_path, "tree_snapshot")

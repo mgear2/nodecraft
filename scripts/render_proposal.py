@@ -215,7 +215,9 @@ def render_manifest_proposal(
             raise ValueError(f"classification iteration does not match chunk {entry['chunk_id']}")
         classification_hash = trace.hash_json_artifact(classification)
         if classification_info["content_hash"] != classification_hash:
-            raise ValueError(f"classification content_hash does not match chunk {entry['chunk_id']}")
+            raise ValueError(
+                f"classification content_hash does not match chunk {entry['chunk_id']}"
+            )
         chunk_provenance = {
             "artifact_type": "classification",
             "run_id": classification["run_id"],

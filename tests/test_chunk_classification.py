@@ -38,3 +38,30 @@ def test_manifest_classification_is_per_chunk_and_resumable(tmp_path):
     proposal = render_manifest_proposal(chunks / "manifest.json")
     assert proposal["run_id"] == "chunk-run"
     assert proposal["changes"] == []
+
+
+def test_manifest_classification_preserves_duplicate_context_across_chunks(tmp_path):
+    root = tmp_path / "tree"
+    root.mkdir()
+    (root / "one.bin").write_bytes(b"same")
+    (root / "two.bin").write_bytes(b"same")
+    chunks = tmp_path / "chunks"
+    scan_tree_to_chunks(str(root), "duplicate-run", chunks, hash_mode="full", max_nodes=1)
+
+    classify_manifest(chunks / "manifest.json", backend=HeuristicBackend())
+
+    manifest = validate_file(chunks / "manifest.json", "chunk_manifest")
+    classifications = []
+    for entry in manifest["chunks"]:
+        chunk = json.loads((chunks / entry["path"]).read_text())
+        classification = validate_file(
+            chunks / entry["classification"]["path"], "classification"
+        )
+        classifications.extend(
+            (node["path"], item["category"])
+            for node in chunk["nodes"]
+            for item in classification["classifications"]
+            if item["node_id"] == node["node_id"]
+        )
+
+    assert sorted(category for _, category in classifications) == ["duplicate", "unknown"]
