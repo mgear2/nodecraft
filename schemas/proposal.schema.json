@@ -21,7 +21,16 @@
           "action": { "enum": ["move", "rename", "delete", "archive"] },
           "from_path": { "type": "string" },
           "to_path": { "type": ["string", "null"] }
-        }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "action": { "enum": ["move", "rename"] } } },
+            "then": {
+              "required": ["to_path"],
+              "properties": { "to_path": { "type": "string", "minLength": 1 } }
+            }
+          }
+        ]
       }
     }
   }

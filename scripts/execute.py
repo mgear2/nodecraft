@@ -29,8 +29,26 @@ def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _safe_path(root: Path, value: str, *, allow_missing: bool = True) -> Path:
+    candidate = Path(value)
+    if candidate.is_absolute() or not value or any(part == ".." for part in candidate.parts):
+        raise ValueError(f"path must be relative and contained within root: {value!r}")
+    resolved_root = root.resolve()
+    resolved = (root / candidate).resolve(strict=not allow_missing)
+    if resolved != resolved_root and resolved_root not in resolved.parents:
+        raise ValueError(f"path escapes root: {value!r}")
+    return root / candidate
+
+
+def _validate_change(root: Path, change: dict) -> None:
+    _safe_path(root, change["from_path"], allow_missing=True)
+    if change["action"] in ("move", "rename") and not change.get("to_path"):
+        raise ValueError(f"{change['action']} requires a to_path")
+    if change.get("to_path"):
+        _safe_path(root, change["to_path"], allow_missing=True)
+
+
 def execute_operation(root: Path, change: dict, trash_dir: Path, permanent_delete: bool) -> dict:
-    from_abs = root / change["from_path"]
     action = change["action"]
     op = {
         "node_id": change["node_id"],
@@ -42,21 +60,23 @@ def execute_operation(root: Path, change: dict, trash_dir: Path, permanent_delet
     }
 
     try:
+        _validate_change(root, change)
+        from_abs = _safe_path(root, change["from_path"])
         if not from_abs.exists() and not from_abs.is_symlink():
             op["status"] = "skipped"
             op["error"] = "source path no longer exists"
             return op
 
         if action in ("move", "rename"):
-            to_abs = root / change["to_path"]
+            to_abs = _safe_path(root, change["to_path"])
             _ensure_parent(to_abs)
             shutil.move(str(from_abs), str(to_abs))
 
         elif action == "archive":
             to_abs = (
-                root / change["to_path"]
+                _safe_path(root, change["to_path"])
                 if change.get("to_path")
-                else trash_dir / change["from_path"]
+                else _safe_path(root, str(Path(".trash") / trash_dir.name / change["from_path"]))
             )
             _ensure_parent(to_abs)
             shutil.move(str(from_abs), str(to_abs))
@@ -72,12 +92,14 @@ def execute_operation(root: Path, change: dict, trash_dir: Path, permanent_delet
                     from_abs.unlink()
                 op["to_path"] = None
             else:
-                to_abs = trash_dir / change["from_path"]
+                to_abs = _safe_path(
+                    root, str(Path(".trash") / trash_dir.name / change["from_path"])
+                )
                 _ensure_parent(to_abs)
                 shutil.move(str(from_abs), str(to_abs))
                 op["to_path"] = str(to_abs)
 
-    except OSError as e:
+    except (OSError, ValueError, TypeError) as e:
         op["status"] = "failed"
         op["error"] = str(e)
 
@@ -144,6 +166,8 @@ def execute_proposal(
         )
 
     root = Path(root_path).resolve()
+    for change in proposal["changes"]:
+        _validate_change(root, change)
     trash_dir = root / ".trash" / proposal["run_id"]
     started = trace.now_iso()
 

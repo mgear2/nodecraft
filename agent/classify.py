@@ -21,6 +21,7 @@ from typing import Protocol
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import trace  # noqa: E402
+from lib.progress import Progress  # noqa: E402
 from lib.validate import validate_file, write_validated  # noqa: E402
 
 VALID_CATEGORIES = {"source", "config", "docs", "cache", "duplicate", "build_artifact", "unknown"}
@@ -225,12 +226,16 @@ def classify_all(
     backend: ClassifierBackend,
     feedback: str | None = None,
     iteration: int = 1,
+    progress: Progress | None = None,
 ) -> dict:
     nodes = snapshot["nodes"]
     classifications = []
+    items = (progress or Progress(quiet=True)).items("classifying", len(nodes))
     for node in nodes:
         result = backend.classify_node(node, nodes, feedback)
         classifications.append({"node_id": node["node_id"], **result})
+        items.update()
+    items.finish()
 
     return {
         "schema_version": trace.SCHEMA_VERSION,
@@ -251,11 +256,15 @@ def main() -> None:
     )
     parser.add_argument("--iteration", type=int, default=1)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--quiet", action="store_true", help="suppress progress output")
     args = parser.parse_args()
 
     snapshot = validate_file(args.snapshot_path, "tree_snapshot")
     backend: ClassifierBackend = HeuristicBackend() if args.backend == "heuristic" else LLMBackend()
-    result = classify_all(snapshot, backend, feedback=args.feedback, iteration=args.iteration)
+    result = classify_all(
+        snapshot, backend, feedback=args.feedback, iteration=args.iteration,
+        progress=Progress(args.quiet),
+    )
 
     out_path = args.out or f"runs/{snapshot['run_id']}/classification.v{args.iteration}.json"
     if args.dry_run:

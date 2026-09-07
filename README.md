@@ -22,6 +22,14 @@ uv run ruff check .
 uv run ruff format --check .
 uv run ty check
 
+# Suppress progress output (useful for CI/scripts)
+uv run python cli.py run /path/to/directory --auto-approve --quiet
+uv run python cli.py scan /path/to/directory --quiet
+
+# Large trees: skip hashing files above 100 MB and reuse the persistent cache
+uv run python cli.py scan /path/to/directory --hash-mode conditional --max-hash-size 100MB
+uv run python cli.py scan /path/to/directory --hash-mode none --no-cache
+
 # Full pipeline, interactive approval prompt:
 uv run python cli.py run /path/to/directory
 
@@ -40,6 +48,16 @@ uv run python cli.py summarize runs/<run_id>/execution_log.json --dry-run
 
 Use `uv sync --extra llm` to install the optional Anthropic dependency needed
 by `--backend llm`.
+
+Hashing is full and exact by default. For large trees, `--hash-mode conditional`
+hashes only files at or below `--max-hash-size` (supports bytes or `KB`, `MB`,
+and `GB` suffixes), while `--hash-mode none` skips content reads entirely.
+Scans reuse hashes from `.nodecraft/hash-cache.json`; use `--no-cache` or
+`--cache-path PATH` to control that behavior. Files without hashes cannot be
+confirmed as content duplicates. Execution paths must remain relative to the
+selected root; absolute paths, parent traversal, and symlink escapes are
+rejected. The scanner uses a portable creation-time fallback on platforms that
+do not expose `st_birthtime`.
 
 ## Layout
 

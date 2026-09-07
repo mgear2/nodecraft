@@ -97,6 +97,49 @@ def test_execute_refuses_mismatched_proposal_id(tmp_path):
         pass
 
 
+def test_execute_rejects_paths_outside_root(tmp_path):
+    _make_tree(tmp_path)
+    proposal = {
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "run_id": "r1",
+        "iteration": 1,
+        "based_on_input_hash": "x",
+        "diagram": "n/a",
+        "changes": [
+            {"node_id": "n1", "action": "delete", "from_path": "../outside.txt", "to_path": None}
+        ],
+    }
+    approval = {
+        "proposal_id": "p1",
+        "decision": "approve",
+    }
+    try:
+        execute_proposal(str(tmp_path), proposal, approval)
+        assert False, "should have raised"
+    except ValueError as error:
+        assert "contained within root" in str(error)
+
+
+def test_execute_rejects_move_without_target(tmp_path):
+    _make_tree(tmp_path)
+    proposal = {
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "run_id": "r1",
+        "iteration": 1,
+        "based_on_input_hash": "x",
+        "diagram": "n/a",
+        "changes": [{"node_id": "n1", "action": "move", "from_path": "keep.py", "to_path": None}],
+    }
+    approval = {"proposal_id": "p1", "decision": "approve"}
+    try:
+        execute_proposal(str(tmp_path), proposal, approval)
+        assert False, "should have raised"
+    except ValueError as error:
+        assert "requires a to_path" in str(error)
+
+
 def test_undo_script_actually_reverses_move(tmp_path):
     """This is the correctness check called for by C.1's I14 note:
     verify the undo script actually reverses the operation, not just that
