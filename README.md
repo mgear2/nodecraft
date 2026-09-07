@@ -81,7 +81,8 @@ tests/
   script refuses to produce invalid output rather than passing it downstream.
 - **Reversibility.** `execute.py` archives deletes into `.trash/<run_id>/`
   by default (pass `--permanent-delete` to skip that) and always emits an
-  `undo.sh` that can reverse moves/renames/archives.
+  `undo.py` script that can reverse moves/renames/archives on Windows, macOS,
+  and Linux.
 - **Append-only revision history.** The T4→T5→T3 rejection loop is modeled
   as new `iteration` numbers, not overwrites — `proposal.v1.json`,
   `proposal.v2.json`, etc. all persist under `runs/<run_id>/`.

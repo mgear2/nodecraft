@@ -111,7 +111,7 @@ def run_pipeline(
 
     # T6
     log, undo_script = execute_proposal(root_path, proposal, approval, permanent_delete)
-    undo_path = rdir / "undo.sh"
+    undo_path = rdir / "undo.py"
     undo_path.write_text(undo_script)
     undo_path.chmod(0o755)
     log["undo_script_path"] = str(undo_path)

@@ -42,7 +42,7 @@ def test_execute_moves_and_archives(tmp_path):
     assert log["operations"][0]["status"] == "success"
     assert not (tmp_path / "a.bak").exists()
     assert (tmp_path / ".trash" / "r1" / "a.bak").exists()
-    assert "mv" in undo
+    assert "shutil.move" in undo
 
 
 def test_execute_refuses_without_approval(tmp_path):
@@ -126,10 +126,10 @@ def test_undo_script_actually_reverses_move(tmp_path):
     assert (tmp_path / "src" / "keep.py").exists()
     assert not (tmp_path / "keep.py").exists()
 
-    undo_path = tmp_path / "undo.sh"
+    undo_path = tmp_path / "undo.py"
     undo_path.write_text(undo_script)
     undo_path.chmod(0o755)
-    subprocess.run(["sh", str(undo_path)], check=True)
+    subprocess.run([sys.executable, str(undo_path)], check=True)
 
     assert (tmp_path / "keep.py").exists()
     assert not (tmp_path / "src" / "keep.py").exists()

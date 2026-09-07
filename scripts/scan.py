@@ -49,7 +49,7 @@ def scan_tree(root_path: str, excludes: set[str] | None = None) -> list[dict]:
 
         for name in list(dirnames) + filenames:
             full_path = Path(dirpath) / name
-            rel_path = str(full_path.relative_to(root))
+            rel_path = full_path.relative_to(root).as_posix()
             try:
                 st = os.lstat(full_path)
             except OSError:
@@ -103,7 +103,7 @@ def scan_tree(root_path: str, excludes: set[str] | None = None) -> list[dict]:
                     "mtime": datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(
                         timespec="seconds"
                     ),
-                    "ctime": datetime.fromtimestamp(st.st_ctime, tz=UTC).isoformat(
+                    "ctime": datetime.fromtimestamp(st.st_birthtime, tz=UTC).isoformat(
                         timespec="seconds"
                     ),
                     "extension": full_path.suffix or None,

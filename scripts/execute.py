@@ -15,6 +15,7 @@ permanent removal, per A.4's reversibility requirement, unless
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -86,27 +87,46 @@ def execute_operation(root: Path, change: dict, trash_dir: Path, permanent_delet
 def generate_undo_script(operations: list[dict], root: Path) -> str:
     """Best-effort inverse: moves/renames/archives are reversible by moving
     back; permanent deletes are not reversible and are called out."""
-    lines = ["#!/bin/sh", "set -e", "# Auto-generated undo script. Review before running."]
-    for op in reversed(operations):
-        if op["status"] != "success":
-            continue
-        if op["action"] in ("move", "rename", "archive") and op.get("to_path"):
-            to_abs = (
-                root / op["to_path"]
-                if not Path(op["to_path"]).is_absolute()
-                else Path(op["to_path"])
-            )
-            from_abs = root / op["from_path"]
-            lines.append(f'mkdir -p "{from_abs.parent}"')
-            lines.append(f'mv "{to_abs}" "{from_abs}"')
-        elif op["action"] == "delete" and op.get("to_path"):
-            to_abs = Path(op["to_path"])
-            from_abs = root / op["from_path"]
-            lines.append(f'mkdir -p "{from_abs.parent}"')
-            lines.append(f'mv "{to_abs}" "{from_abs}"')
-        elif op["action"] == "delete" and not op.get("to_path"):
-            lines.append(f"# IRREVERSIBLE: {op['from_path']} was permanently deleted")
-    return "\n".join(lines) + "\n"
+    undo_operations = [
+        op
+        for op in reversed(operations)
+        if op["status"] == "success"
+        and (
+            op["action"] in ("move", "rename", "archive") and op.get("to_path")
+            or op["action"] == "delete" and op.get("to_path")
+        )
+    ]
+    irreversible = [
+        op["from_path"]
+        for op in operations
+        if op["status"] == "success" and op["action"] == "delete" and not op.get("to_path")
+    ]
+    return f"""#!/usr/bin/env python3
+\"\"\"Auto-generated undo script. Review before running.\"\"\"
+
+import shutil
+import json
+from pathlib import Path
+
+ROOT = Path({str(root)!r})
+OPERATIONS = json.loads({json.dumps(json.dumps(undo_operations))})
+IRREVERSIBLE = json.loads({json.dumps(json.dumps(irreversible))})
+
+
+def resolve(path: str) -> Path:
+    candidate = Path(path)
+    return candidate if candidate.is_absolute() else ROOT / candidate
+
+
+for operation in OPERATIONS:
+    source = resolve(operation["to_path"])
+    destination = ROOT / operation["from_path"]
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(source), str(destination))
+
+for path in IRREVERSIBLE:
+    print(f"WARNING: {{path}} was permanently deleted and cannot be restored.")
+"""
 
 
 def execute_proposal(
@@ -151,7 +171,7 @@ def main() -> None:
     parser.add_argument("proposal_path")
     parser.add_argument("approval_decision_path")
     parser.add_argument("--out", default=None, help="execution_log.json output path")
-    parser.add_argument("--undo-out", default=None, help="undo.sh output path")
+    parser.add_argument("--undo-out", default=None, help="undo.py output path")
     parser.add_argument(
         "--permanent-delete",
         action="store_true",
@@ -172,7 +192,7 @@ def main() -> None:
     log, undo_script = execute_proposal(args.root_path, proposal, approval, args.permanent_delete)
 
     out_path = args.out or f"runs/{proposal['run_id']}/execution_log.json"
-    undo_path = args.undo_out or f"runs/{proposal['run_id']}/undo.sh"
+    undo_path = args.undo_out or f"runs/{proposal['run_id']}/undo.py"
 
     Path(undo_path).parent.mkdir(parents=True, exist_ok=True)
     with open(undo_path, "w", encoding="utf-8") as f:
