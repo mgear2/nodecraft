@@ -10,6 +10,23 @@
     "run_id": { "type": "string" },
     "iteration": { "type": "integer", "minimum": 1 },
     "based_on_input_hash": { "type": "string" },
+    "scope": {
+      "type": "object",
+      "required": ["root_path", "subtree_path", "path_format"],
+      "properties": {
+        "root_path": { "type": "string" },
+        "subtree_path": { "type": "string" },
+        "path_format": { "const": "posix" }
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "source_artifacts": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": true
+    },
     "diagram": { "type": "string" },
     "changes": {
       "type": "array",

@@ -50,6 +50,7 @@ def run_pipeline(
     max_hash_size: int = DEFAULT_MAX_HASH_SIZE,
     cache_path: str | None = None,
     cache_enabled: bool = True,
+    skip_cloud_only: bool = False,
 ) -> dict:
     """Runs T1 -> T2 -> (T3 -> T4 -> [T5 -> T3]*)+ -> T6 -> T7.
 
@@ -74,6 +75,7 @@ def run_pipeline(
         root_path, run_id, progress=progress, hash_mode=hash_mode,
         max_hash_size=max_hash_size, cache_path=cache_path,
         cache_enabled=cache_enabled,
+        skip_cloud_only=skip_cloud_only,
     )
     snap_path = rdir / "tree_snapshot.json"
     write_validated(snapshot, "tree_snapshot", snap_path)
@@ -178,6 +180,11 @@ def main() -> None:
     parser.add_argument("--cache-path", default=None)
     parser.add_argument("--no-cache", action="store_true")
     parser.add_argument(
+        "--skip-cloud-only",
+        action="store_true",
+        help="omit Windows cloud-only placeholder files",
+    )
+    parser.add_argument(
         "--auto-approve",
         action="store_true",
         help="skip the interactive prompt and approve iteration 1 "
@@ -211,6 +218,7 @@ def main() -> None:
         max_hash_size=args.max_hash_size,
         cache_path=args.cache_path,
         cache_enabled=not args.no_cache,
+        skip_cloud_only=args.skip_cloud_only,
     )
 
     print(f"\nrun_id={result['run_id']}")

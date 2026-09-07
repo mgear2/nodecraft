@@ -9,6 +9,25 @@
     "run_id": { "type": "string" },
     "root_path": { "type": "string" },
     "generated_at": { "type": "string", "format": "date-time" },
+    "scope": {
+      "type": "object",
+      "required": ["root_path", "subtree_path", "path_format"],
+      "properties": {
+        "root_path": { "type": "string" },
+        "subtree_path": { "type": "string" },
+        "path_format": { "const": "posix" }
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "source_artifacts": { "type": "array", "items": { "type": "object" } },
+        "derived_from": { "type": "string" },
+        "derived_from_hash": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
     "nodes": {
       "type": "array",
       "items": {
@@ -25,7 +44,8 @@
           "content_type": { "type": ["string", "null"] },
           "content_hash": { "type": ["string", "null"] },
           "symlink_target": { "type": ["string", "null"] },
-          "permissions": { "type": ["string", "null"] }
+          "permissions": { "type": ["string", "null"] },
+          "availability": { "enum": ["available", "cloud_only", "unknown"] }
         }
       }
     }

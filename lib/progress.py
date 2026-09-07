@@ -30,15 +30,27 @@ class _ProgressItems:
         self.current = 0
         self.bytes = 0
         self.files = 0
+        self.skipped = 0
+        self.skipped_bytes = 0
 
-    def update(self, *, bytes_count: int = 0, is_file: bool = False) -> None:
+    def update(
+        self,
+        *,
+        bytes_count: int = 0,
+        is_file: bool = False,
+        skipped: bool = False,
+    ) -> None:
         self.current += 1
         self.bytes += bytes_count
         self.files += int(is_file)
+        self.skipped += int(skipped)
+        self.skipped_bytes += bytes_count if skipped else 0
         if self.callback:
             self.callback(self.current, self.total)
         if self.reporter:
             details = f", {self.files} files, {_format_bytes(self.bytes)}"
+            if self.skipped:
+                details += f", {self.skipped} skipped, {_format_bytes(self.skipped_bytes)} skipped"
             print(
                 f"\r[nodecraft] {self.label}: {self.current}/{self.total}{details}",
                 end="",

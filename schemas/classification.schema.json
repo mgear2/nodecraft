@@ -9,6 +9,25 @@
     "run_id": { "type": "string" },
     "input_hash": { "type": "string" },
     "iteration": { "type": "integer", "minimum": 1, "default": 1 },
+    "scope": {
+      "type": "object",
+      "required": ["root_path", "subtree_path", "path_format"],
+      "properties": {
+        "root_path": { "type": "string" },
+        "subtree_path": { "type": "string" },
+        "path_format": { "const": "posix" }
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "source_artifacts": { "type": "array", "items": { "type": "object" } },
+        "derived_from": { "type": "string" },
+        "derived_from_hash": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
     "classifications": {
       "type": "array",
       "items": {
@@ -25,7 +44,8 @@
           },
           "target_path": { "type": ["string", "null"] },
           "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-          "rationale": { "type": "string" }
+          "rationale": { "type": "string" },
+          "availability": { "enum": ["available", "cloud_only", "unknown"] }
         }
       }
     }

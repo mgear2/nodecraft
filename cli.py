@@ -19,7 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 def main() -> None:
     if len(sys.argv) < 2:
         print(__doc__)
-        print("Usage: filetree <run|scan|classify|render|approve|execute|summarize> [args...]")
+        print(
+            "Usage: filetree "
+            "<run|scan|classify|render|approve|execute|summarize|summarize-subtree> [args...]"
+        )
         sys.exit(1)
 
     command = sys.argv[1]
@@ -58,6 +61,10 @@ def main() -> None:
         import scripts.summarize as summarize
 
         summarize.main()
+    elif command == "summarize-subtree":
+        import scripts.summarize_subtree as summarize_subtree
+
+        summarize_subtree.main()
     else:
         print(f"Unknown command: {command}")
         sys.exit(1)

@@ -233,17 +233,31 @@ def classify_all(
     items = (progress or Progress(quiet=True)).items("classifying", len(nodes))
     for node in nodes:
         result = backend.classify_node(node, nodes, feedback)
+        if "availability" in node:
+            result["availability"] = node["availability"]
         classifications.append({"node_id": node["node_id"], **result})
         items.update()
     items.finish()
 
-    return {
+    result = {
         "schema_version": trace.SCHEMA_VERSION,
         "run_id": snapshot["run_id"],
         "input_hash": trace.hash_json_artifact(snapshot),
         "iteration": iteration,
         "classifications": classifications,
     }
+    if "scope" in snapshot:
+        result["scope"] = snapshot["scope"]
+    result["provenance"] = {
+        "source_artifacts": [
+            {
+                "artifact_type": "tree_snapshot",
+                "run_id": snapshot["run_id"],
+                "content_hash": trace.hash_json_artifact(snapshot),
+            }
+        ]
+    }
+    return result
 
 
 def main() -> None:

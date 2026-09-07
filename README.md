@@ -44,6 +44,9 @@ uv run python cli.py render runs/<run_id>/tree_snapshot.json runs/<run_id>/class
 uv run python cli.py approve runs/<run_id>/proposal.v1.json --decision approve
 uv run python cli.py execute /path/to/directory runs/<run_id>/proposal.v1.json runs/<run_id>/approval_decision.v1.json --dry-run
 uv run python cli.py summarize runs/<run_id>/execution_log.json --dry-run
+# Derive immutable subtree snapshot/classification/report artifacts
+uv run python cli.py summarize-subtree \
+  runs/<run_id>/tree_snapshot.json runs/<run_id>/classification.v1.json src
 ```
 
 Use `uv sync --extra llm` to install the optional Anthropic dependency needed
@@ -58,6 +61,18 @@ confirmed as content duplicates. Execution paths must remain relative to the
 selected root; absolute paths, parent traversal, and symlink escapes are
 rejected. The scanner uses a portable creation-time fallback on platforms that
 do not expose `st_birthtime`.
+
+Snapshots and downstream artifacts carry optional `scope` and `provenance`
+metadata. `summarize-subtree` accepts a normalized POSIX relative path,
+includes exactly that node and its descendants, and never changes the source
+artifacts. Use `--dry-run` to inspect the report without writing the derived
+snapshot, classification, or report. A missing subtree path is an error.
+
+On Windows, scanner availability is checked with `GetFileAttributesW` only
+(file content is never opened for this check). Cloud-only placeholders are
+marked with `availability: "cloud_only"` and are never hashed. Pass
+`--skip-cloud-only` to omit them from the snapshot; progress output includes
+the skipped count and bytes. The option is a no-op on non-Windows platforms.
 
 ## Layout
 
@@ -84,6 +99,23 @@ tests/
   test_execute.py      (I14)
   test_e2e.py           full pipeline incl. reject->revise->approve (I18)
 ```
+
+## Pipeline DAG
+
+```mermaid
+flowchart TD
+    T1["Scan"] --> T2["Classify"] --> T3["Render proposal"]
+    T3 --> T4{"Approve?"}
+    T4 -- reject --> T5["Revise"]
+    T5 --> T3
+    T4 -- approve --> T6["Execute"] --> T7["Summarize"]
+```
+
+Every stage produces a schema-validated artifact. Rejected proposals create a
+new iteration rather than overwriting prior artifacts; T6 is unreachable until
+an approval decision explicitly approves the current proposal. See
+[docs/pipeline-dag.md](C:/Users/matth/workplace/nodecraft/docs/pipeline-dag.md)
+for the detailed repository mapping.
 
 ## Design notes carried over from the spec
 

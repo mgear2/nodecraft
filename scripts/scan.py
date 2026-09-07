@@ -19,6 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import trace  # noqa: E402
+from lib.availability import AVAILABLE, CLOUD_ONLY, UNKNOWN, detect_availability  # noqa: E402
 from lib.hash_cache import HashCache  # noqa: E402
 from lib.progress import Progress  # noqa: E402
 from lib.validate import write_validated  # noqa: E402
@@ -60,6 +61,7 @@ def scan_tree(
     max_hash_size: int = DEFAULT_MAX_HASH_SIZE,
     cache_path: str | Path | None = None,
     cache_enabled: bool = True,
+    skip_cloud_only: bool = False,
 ) -> list[dict]:
     """Pure function: filesystem -> list of node dicts. No I/O side effects
     beyond reading. Excludes are matched against directory *names* at any
@@ -104,17 +106,30 @@ def scan_tree(
                         "content_hash": None,
                         "symlink_target": None,
                         "permissions": None,
+                        "availability": UNKNOWN,
                     }
                 )
+                progress_items.update(skipped=False)
                 continue
 
             is_symlink = stat.S_ISLNK(st.st_mode)
             is_dir = full_path.is_dir() and not is_symlink
             node_type = "symlink" if is_symlink else ("directory" if is_dir else "file")
+            availability = (
+                detect_availability(full_path) if node_type == "file" else AVAILABLE
+            )
+            if availability == CLOUD_ONLY and skip_cloud_only:
+                progress_items.update(
+                    bytes_count=st.st_size,
+                    is_file=True,
+                    skipped=True,
+                )
+                continue
 
             content_hash = None
             should_hash = (
                 node_type == "file"
+                and availability != CLOUD_ONLY
                 and (
                     hash_mode == "full"
                     or hash_mode == "conditional" and st.st_size <= max_hash_size
@@ -160,6 +175,7 @@ def scan_tree(
                     "content_hash": content_hash,
                     "symlink_target": symlink_target,
                     "permissions": oct(stat.S_IMODE(st.st_mode)),
+                    "availability": availability,
                 }
             )
             progress_items.update(
@@ -186,14 +202,27 @@ def build_snapshot(
     max_hash_size: int = DEFAULT_MAX_HASH_SIZE,
     cache_path: str | Path | None = None,
     cache_enabled: bool = True,
+    skip_cloud_only: bool = False,
 ) -> dict:
     return {
         "schema_version": trace.SCHEMA_VERSION,
         "run_id": run_id,
         "root_path": str(Path(root_path).resolve()),
         "generated_at": trace.now_iso(),
+        "scope": {
+            "root_path": str(Path(root_path).resolve()),
+            "subtree_path": ".",
+            "path_format": "posix",
+        },
         "nodes": scan_tree(
-            root_path, excludes, progress, hash_mode, max_hash_size, cache_path, cache_enabled
+            root_path,
+            excludes,
+            progress,
+            hash_mode,
+            max_hash_size,
+            cache_path,
+            cache_enabled,
+            skip_cloud_only,
         ),
     }
 
@@ -214,6 +243,11 @@ def main() -> None:
     parser.add_argument("--max-hash-size", type=parse_size, default=DEFAULT_MAX_HASH_SIZE)
     parser.add_argument("--cache-path", default=None)
     parser.add_argument("--no-cache", action="store_true")
+    parser.add_argument(
+        "--skip-cloud-only",
+        action="store_true",
+        help="omit Windows cloud-only placeholder files without recalling content",
+    )
     args = parser.parse_args()
 
     run_id = args.run_id or trace.new_run_id()
@@ -222,6 +256,7 @@ def main() -> None:
         args.root_path, run_id, excludes, Progress(args.quiet),
         args.hash_mode, args.max_hash_size, args.cache_path,
         cache_enabled=not args.no_cache,
+        skip_cloud_only=args.skip_cloud_only,
     )
 
     out_path = args.out or f"runs/{run_id}/tree_snapshot.json"

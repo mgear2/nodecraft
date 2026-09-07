@@ -22,6 +22,7 @@ _SCHEMA_FILENAMES = {
     "proposal": "proposal.schema.json",
     "approval_decision": "approval_decision.schema.json",
     "execution_log": "execution_log.schema.json",
+    "subtree_report": "subtree_report.schema.json",
 }
 
 _validator_cache: dict[str, Any] = {}

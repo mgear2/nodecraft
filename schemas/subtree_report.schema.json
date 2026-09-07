@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "subtree_report.schema.json",
+  "title": "SubtreeReport",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "report_type",
+    "run_id",
+    "scope",
+    "provenance",
+    "node_count",
+    "file_count",
+    "directory_count",
+    "classification_count",
+    "availability",
+    "categories"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "report_type": { "const": "subtree" },
+    "run_id": { "type": "string" },
+    "scope": {
+      "type": "object",
+      "required": ["root_path", "subtree_path", "path_format"],
+      "properties": {
+        "root_path": { "type": "string" },
+        "subtree_path": { "type": "string" },
+        "path_format": { "const": "posix" }
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["source_artifacts"],
+      "properties": {
+        "source_artifacts": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": true
+    },
+    "node_count": { "type": "integer", "minimum": 0 },
+    "file_count": { "type": "integer", "minimum": 0 },
+    "directory_count": { "type": "integer", "minimum": 0 },
+    "classification_count": { "type": "integer", "minimum": 0 },
+    "availability": { "type": "object", "additionalProperties": { "type": "integer" } },
+    "categories": { "type": "object", "additionalProperties": { "type": "integer" } }
+  }
+}

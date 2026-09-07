@@ -80,7 +80,7 @@ def render_proposal(snapshot: dict, classification: dict, iteration: int | None 
     diagram = render_diagram(nodes_by_id, classifications)
     changes = build_changes(classifications, nodes_by_id)
 
-    return {
+    result = {
         "schema_version": trace.SCHEMA_VERSION,
         "proposal_id": trace.new_proposal_id(),
         "run_id": snapshot["run_id"],
@@ -89,6 +89,18 @@ def render_proposal(snapshot: dict, classification: dict, iteration: int | None 
         "diagram": diagram,
         "changes": changes,
     }
+    if "scope" in snapshot:
+        result["scope"] = snapshot["scope"]
+    result["provenance"] = {
+        "source_artifacts": [
+            {
+                "artifact_type": "classification",
+                "run_id": classification.get("run_id", snapshot["run_id"]),
+                "content_hash": trace.hash_json_artifact(classification),
+            }
+        ]
+    }
+    return result
 
 
 def main() -> None:
