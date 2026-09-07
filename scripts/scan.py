@@ -129,7 +129,10 @@ def scan_tree(
             content_hash = None
             should_hash = (
                 node_type == "file"
-                and availability != CLOUD_ONLY
+                # Hash only when availability was positively established.
+                # On Windows an unavailable metadata probe is deliberately
+                # fail-closed so hashing cannot recall cloud-only content.
+                and availability == AVAILABLE
                 and (
                     hash_mode == "full"
                     or hash_mode == "conditional" and st.st_size <= max_hash_size

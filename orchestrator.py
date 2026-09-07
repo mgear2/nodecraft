@@ -26,12 +26,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent.classify import HeuristicBackend, LLMBackend, classify_all  # noqa: E402
 from lib import trace  # noqa: E402
+from lib.metadata import normalize_subtree_path  # noqa: E402
 from lib.progress import Progress  # noqa: E402
 from lib.validate import write_validated  # noqa: E402
 from scripts.execute import execute_proposal  # noqa: E402
 from scripts.render_proposal import render_proposal  # noqa: E402
 from scripts.scan import DEFAULT_MAX_HASH_SIZE, build_snapshot  # noqa: E402
 from scripts.summarize import build_manifest, render_summary_md  # noqa: E402
+from scripts.summarize_subtree import build_subtree_snapshot  # noqa: E402
 
 
 class MaxIterationsExceeded(Exception):
@@ -51,6 +53,7 @@ def run_pipeline(
     cache_path: str | None = None,
     cache_enabled: bool = True,
     skip_cloud_only: bool = False,
+    subtree_path: str = ".",
 ) -> dict:
     """Runs T1 -> T2 -> (T3 -> T4 -> [T5 -> T3]*)+ -> T6 -> T7.
 
@@ -77,6 +80,9 @@ def run_pipeline(
         cache_enabled=cache_enabled,
         skip_cloud_only=skip_cloud_only,
     )
+    subtree = normalize_subtree_path(subtree_path)
+    if subtree != ".":
+        snapshot = build_subtree_snapshot(snapshot, subtree)
     snap_path = rdir / "tree_snapshot.json"
     write_validated(snapshot, "tree_snapshot", snap_path)
     artifacts["tree_snapshot"] = str(snap_path)
@@ -185,6 +191,11 @@ def main() -> None:
         help="omit Windows cloud-only placeholder files",
     )
     parser.add_argument(
+        "--subtree",
+        default=".",
+        help="run the pipeline as a canonical tree rooted at this relative subtree",
+    )
+    parser.add_argument(
         "--auto-approve",
         action="store_true",
         help="skip the interactive prompt and approve iteration 1 "
@@ -219,6 +230,7 @@ def main() -> None:
         cache_path=args.cache_path,
         cache_enabled=not args.no_cache,
         skip_cloud_only=args.skip_cloud_only,
+        subtree_path=args.subtree,
     )
 
     print(f"\nrun_id={result['run_id']}")

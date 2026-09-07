@@ -10,6 +10,16 @@
     "proposal_id": { "type": "string" },
     "started_at": { "type": "string", "format": "date-time" },
     "completed_at": { "type": "string", "format": "date-time" },
+    "scope": {
+      "type": "object",
+      "required": ["root_path", "subtree_path", "path_format"],
+      "properties": {
+        "root_path": { "type": "string" },
+        "subtree_path": { "type": "string" },
+        "path_format": { "const": "posix" }
+      },
+      "additionalProperties": true
+    },
     "operations": {
       "type": "array",
       "items": {

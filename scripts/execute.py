@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import trace  # noqa: E402
+from lib.metadata import normalize_subtree_path  # noqa: E402
 from lib.validate import validate_file, write_validated  # noqa: E402
 
 
@@ -29,26 +30,39 @@ def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _safe_path(root: Path, value: str, *, allow_missing: bool = True) -> Path:
+def _safe_path(
+    root: Path, value: str, *, scope_path: str = ".", allow_missing: bool = True
+) -> Path:
     candidate = Path(value)
     if candidate.is_absolute() or not value or any(part == ".." for part in candidate.parts):
         raise ValueError(f"path must be relative and contained within root: {value!r}")
     resolved_root = root.resolve()
-    resolved = (root / candidate).resolve(strict=not allow_missing)
+    scope = normalize_subtree_path(scope_path)
+    scope_root = (root / scope if scope != "." else root).resolve()
+    resolved = (scope_root / candidate).resolve(strict=not allow_missing)
+    if resolved != scope_root and scope_root not in resolved.parents:
+        raise ValueError(f"path escapes selected scope: {value!r}")
     if resolved != resolved_root and resolved_root not in resolved.parents:
         raise ValueError(f"path escapes root: {value!r}")
-    return root / candidate
+    return scope_root / candidate
 
 
-def _validate_change(root: Path, change: dict) -> None:
-    _safe_path(root, change["from_path"], allow_missing=True)
+def _validate_change(root: Path, change: dict, *, scope_path: str = ".") -> None:
+    _safe_path(root, change["from_path"], scope_path=scope_path, allow_missing=True)
     if change["action"] in ("move", "rename") and not change.get("to_path"):
         raise ValueError(f"{change['action']} requires a to_path")
     if change.get("to_path"):
-        _safe_path(root, change["to_path"], allow_missing=True)
+        _safe_path(root, change["to_path"], scope_path=scope_path, allow_missing=True)
 
 
-def execute_operation(root: Path, change: dict, trash_dir: Path, permanent_delete: bool) -> dict:
+def execute_operation(
+    root: Path,
+    change: dict,
+    trash_dir: Path,
+    permanent_delete: bool,
+    *,
+    scope_path: str = ".",
+) -> dict:
     action = change["action"]
     op = {
         "node_id": change["node_id"],
@@ -60,28 +74,30 @@ def execute_operation(root: Path, change: dict, trash_dir: Path, permanent_delet
     }
 
     try:
-        _validate_change(root, change)
-        from_abs = _safe_path(root, change["from_path"])
+        _validate_change(root, change, scope_path=scope_path)
+        from_abs = _safe_path(root, change["from_path"], scope_path=scope_path)
         if not from_abs.exists() and not from_abs.is_symlink():
             op["status"] = "skipped"
             op["error"] = "source path no longer exists"
             return op
 
         if action in ("move", "rename"):
-            to_abs = _safe_path(root, change["to_path"])
+            to_abs = _safe_path(root, change["to_path"], scope_path=scope_path)
             _ensure_parent(to_abs)
             shutil.move(str(from_abs), str(to_abs))
 
         elif action == "archive":
             to_abs = (
-                _safe_path(root, change["to_path"])
+                _safe_path(root, change["to_path"], scope_path=scope_path)
                 if change.get("to_path")
-                else _safe_path(root, str(Path(".trash") / trash_dir.name / change["from_path"]))
+                else trash_dir / change["from_path"]
             )
             _ensure_parent(to_abs)
             shutil.move(str(from_abs), str(to_abs))
             op["to_path"] = (
-                str(to_abs.relative_to(root)) if to_abs.is_relative_to(root) else str(to_abs)
+                str(to_abs.relative_to(root / scope_path))
+                if to_abs.is_relative_to(root / scope_path)
+                else str(to_abs)
             )
 
         elif action == "delete":
@@ -92,12 +108,10 @@ def execute_operation(root: Path, change: dict, trash_dir: Path, permanent_delet
                     from_abs.unlink()
                 op["to_path"] = None
             else:
-                to_abs = _safe_path(
-                    root, str(Path(".trash") / trash_dir.name / change["from_path"])
-                )
+                to_abs = trash_dir / change["from_path"]
                 _ensure_parent(to_abs)
                 shutil.move(str(from_abs), str(to_abs))
-                op["to_path"] = str(to_abs)
+                op["to_path"] = str(to_abs.relative_to(root / scope_path))
 
     except (OSError, ValueError, TypeError) as e:
         op["status"] = "failed"
@@ -106,7 +120,7 @@ def execute_operation(root: Path, change: dict, trash_dir: Path, permanent_delet
     return op
 
 
-def generate_undo_script(operations: list[dict], root: Path) -> str:
+def generate_undo_script(operations: list[dict], root: Path, scope_path: str = ".") -> str:
     """Best-effort inverse: moves/renames/archives are reversible by moving
     back; permanent deletes are not reversible and are called out."""
     undo_operations = [
@@ -131,18 +145,25 @@ import json
 from pathlib import Path
 
 ROOT = Path({str(root)!r})
+SCOPE_PATH = {normalize_subtree_path(scope_path)!r}
 OPERATIONS = json.loads({json.dumps(json.dumps(undo_operations))})
 IRREVERSIBLE = json.loads({json.dumps(json.dumps(irreversible))})
 
 
 def resolve(path: str) -> Path:
     candidate = Path(path)
-    return candidate if candidate.is_absolute() else ROOT / candidate
+    if candidate.is_absolute() or not path or any(part == ".." for part in candidate.parts):
+        raise ValueError(f"undo path is not relative: {{path!r}}")
+    scope_root = ROOT if SCOPE_PATH == "." else ROOT / SCOPE_PATH
+    resolved = (scope_root / candidate).resolve()
+    if resolved != scope_root and scope_root not in resolved.parents:
+        raise ValueError(f"undo path escapes selected scope: {{path!r}}")
+    return scope_root / candidate
 
 
 for operation in OPERATIONS:
     source = resolve(operation["to_path"])
-    destination = ROOT / operation["from_path"]
+    destination = resolve(operation["from_path"])
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(source), str(destination))
 
@@ -166,13 +187,41 @@ def execute_proposal(
         )
 
     root = Path(root_path).resolve()
+    scope_path = normalize_subtree_path(proposal.get("scope", {}).get("subtree_path", "."))
+    scope_root = root if scope_path == "." else root / scope_path
+    trash_dir = scope_root / ".trash" / proposal["run_id"]
     for change in proposal["changes"]:
-        _validate_change(root, change)
-    trash_dir = root / ".trash" / proposal["run_id"]
+        _validate_change(root, change, scope_path=scope_path)
+    source_paths = {
+        _safe_path(root, change["from_path"], scope_path=scope_path).resolve()
+        for change in proposal["changes"]
+    }
+    seen_destinations: set[str] = set()
+    for change in proposal["changes"]:
+        destination = change.get("to_path")
+        if (
+            destination is None
+            and not permanent_delete
+            and change["action"] in ("archive", "delete")
+        ):
+            destination_path = trash_dir / change["from_path"]
+            destination = str(destination_path.relative_to(scope_root))
+        if destination:
+            resolved = _safe_path(root, destination, scope_path=scope_path).resolve()
+            key = str(resolved).casefold()
+            if key in seen_destinations:
+                raise ValueError(f"duplicate operation destination: {destination!r}")
+            seen_destinations.add(key)
+            if resolved in source_paths:
+                raise ValueError(f"refusing to overwrite an operation source: {destination!r}")
+            if resolved.exists():
+                raise ValueError(f"refusing to overwrite existing destination: {destination!r}")
     started = trace.now_iso()
 
     operations = [
-        execute_operation(root, change, trash_dir, permanent_delete)
+        execute_operation(
+            root, change, trash_dir, permanent_delete, scope_path=scope_path
+        )
         for change in proposal["changes"]
     ]
 
@@ -185,7 +234,9 @@ def execute_proposal(
         "operations": operations,
         "undo_script_path": None,  # filled in by caller once written to disk
     }
-    undo_script = generate_undo_script(operations, root)
+    if "scope" in proposal:
+        log["scope"] = proposal["scope"]
+    undo_script = generate_undo_script(operations, root, scope_path)
     return log, undo_script
 
 

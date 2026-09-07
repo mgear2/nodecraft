@@ -1,3 +1,4 @@
+from lib.availability import UNKNOWN
 from scripts.scan import build_snapshot, parse_size
 
 
@@ -42,3 +43,14 @@ def test_cache_path_is_excluded_from_scan(tmp_path):
     build_snapshot(str(tmp_path), "r1", cache_path=cache_path)
     snapshot = build_snapshot(str(tmp_path), "r2", cache_path=cache_path)
     assert all(node["path"] != ".nodecraft/hash-cache.json" for node in snapshot["nodes"])
+
+
+def test_unknown_availability_is_not_hashed(tmp_path, monkeypatch):
+    path = tmp_path / "cloud-placeholder"
+    path.write_text("content")
+    monkeypatch.setattr("scripts.scan.detect_availability", lambda _: UNKNOWN)
+
+    snapshot = build_snapshot(str(tmp_path), "r1")
+
+    assert snapshot["nodes"][0]["availability"] == UNKNOWN
+    assert snapshot["nodes"][0]["content_hash"] is None

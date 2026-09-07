@@ -17,6 +17,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import trace  # noqa: E402
+from lib.metadata import validate_snapshot_classification_lineage  # noqa: E402
 from lib.validate import validate_file, write_validated  # noqa: E402
 
 ACTIONABLE = {"move", "rename", "delete", "archive"}
@@ -74,6 +75,8 @@ def build_changes(
 
 
 def render_proposal(snapshot: dict, classification: dict, iteration: int | None = None) -> dict:
+    if "scope" in snapshot or "scope" in classification:
+        validate_snapshot_classification_lineage(snapshot, classification)
     nodes_by_id = {n["node_id"]: n for n in snapshot["nodes"]}
     classifications = classification["classifications"]
 

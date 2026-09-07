@@ -2,6 +2,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib import trace  # noqa: E402
@@ -176,3 +178,53 @@ def test_undo_script_actually_reverses_move(tmp_path):
 
     assert (tmp_path / "keep.py").exists()
     assert not (tmp_path / "src" / "keep.py").exists()
+
+
+def test_scoped_execute_contains_trash_and_undo(tmp_path):
+    scoped = tmp_path / "scoped"
+    scoped.mkdir()
+    (scoped / "old.bak").write_text("hello")
+    proposal = {
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "run_id": "r1",
+        "iteration": 1,
+        "based_on_input_hash": "x",
+        "diagram": "n/a",
+        "scope": {
+            "root_path": str(tmp_path),
+            "subtree_path": "scoped",
+            "path_format": "posix",
+        },
+        "changes": [
+            {"node_id": "n1", "action": "delete", "from_path": "old.bak", "to_path": None}
+        ],
+    }
+    approval = {"proposal_id": "p1", "decision": "approve"}
+
+    log, undo_script = execute_proposal(str(tmp_path), proposal, approval)
+
+    assert (scoped / ".trash" / "r1" / "old.bak").exists()
+    assert not (tmp_path / ".trash" / "r1").exists()
+    undo_path = tmp_path / "undo.py"
+    undo_path.write_text(undo_script)
+    subprocess.run([sys.executable, str(undo_path)], check=True)
+    assert (scoped / "old.bak").exists()
+
+
+def test_execute_rejects_duplicate_destinations(tmp_path):
+    _make_tree(tmp_path)
+    proposal = {
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "run_id": "r1",
+        "iteration": 1,
+        "based_on_input_hash": "x",
+        "diagram": "n/a",
+        "changes": [
+            {"node_id": "n1", "action": "move", "from_path": "keep.py", "to_path": "x.py"},
+            {"node_id": "n2", "action": "move", "from_path": "a.bak", "to_path": "x.py"},
+        ],
+    }
+    with pytest.raises(ValueError, match="duplicate"):
+        execute_proposal(str(tmp_path), proposal, {"proposal_id": "p1", "decision": "approve"})

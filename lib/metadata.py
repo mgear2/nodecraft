@@ -33,6 +33,70 @@ def normalize_subtree_path(value: str) -> str:
     return PurePosixPath(normalized).as_posix()
 
 
+def compose_subtree_path(parent: str, child: str) -> str:
+    """Compose a requested path with an artifact's existing scope.
+
+    Subtree artifacts are trees in their own right, so callers address a
+    descendant relative to the artifact.  Accepting the already-composed
+    form as well keeps the helper convenient for callers passing paths from a
+    full snapshot.
+    """
+
+    base = normalize_subtree_path(parent)
+    requested = normalize_subtree_path(child)
+    if base == ".":
+        return requested
+    if requested == base or requested.startswith(base + "/"):
+        return requested
+    return normalize_subtree_path(posixpath.join(base, requested))
+
+
+def relative_to_scope(path: str, scope_path: str) -> str:
+    """Return a node path relative to ``scope_path``."""
+
+    normalized = normalize_subtree_path(path)
+    scope = normalize_subtree_path(scope_path)
+    if scope == ".":
+        return normalized
+    if normalized == scope:
+        return "."
+    if normalized.startswith(scope + "/"):
+        return normalized[len(scope) + 1 :]
+    return normalized
+
+
+def scope_equal(left: dict[str, Any] | None, right: dict[str, Any] | None) -> bool:
+    """Compare scopes using canonical paths and roots."""
+
+    if left is None or right is None:
+        return left is right
+    return (
+        str(left.get("root_path")) == str(right.get("root_path"))
+        and normalize_subtree_path(str(left.get("subtree_path", ".")))
+        == normalize_subtree_path(str(right.get("subtree_path", ".")))
+        and left.get("path_format", "posix") == right.get("path_format", "posix")
+    )
+
+
+def validate_snapshot_classification_lineage(
+    snapshot: dict[str, Any],
+    classification: dict[str, Any],
+    *,
+    require_input_hash: bool = True,
+) -> None:
+    """Reject classifications that were not produced for ``snapshot``."""
+
+    if snapshot.get("run_id") != classification.get("run_id"):
+        raise ValueError("snapshot and classification run_id do not match")
+    if require_input_hash and classification.get("input_hash") != trace.hash_json_artifact(
+        snapshot
+    ):
+        raise ValueError("classification input_hash does not match snapshot")
+    if "scope" in snapshot or "scope" in classification:
+        if not scope_equal(snapshot.get("scope"), classification.get("scope")):
+            raise ValueError("snapshot and classification scope do not match")
+
+
 def path_in_subtree(path: str, subtree_path: str) -> bool:
     subtree = normalize_subtree_path(subtree_path)
     normalized = path.replace("\\", "/")

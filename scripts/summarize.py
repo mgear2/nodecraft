@@ -51,13 +51,16 @@ def build_manifest(log: dict) -> dict:
     by_status: dict[str, int] = {}
     for op in ops:
         by_status[op["status"]] = by_status.get(op["status"], 0) + 1
-    return {
+    manifest = {
         "run_id": log["run_id"],
         "proposal_id": log["proposal_id"],
         "operation_count": len(ops),
         "by_status": by_status,
         "undo_script_path": log.get("undo_script_path"),
     }
+    if "scope" in log:
+        manifest["scope"] = log["scope"]
+    return manifest
 
 
 def main() -> None:

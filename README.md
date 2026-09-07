@@ -36,6 +36,8 @@ uv run python cli.py run /path/to/directory
 # Full pipeline, skip the prompt (approves iteration 1 automatically —
 # use only for trusted/CI runs):
 uv run python cli.py run /path/to/directory --auto-approve
+# Run the same pipeline as a contained canonical subtree
+uv run python cli.py run /path/to/directory --subtree src --auto-approve
 
 # Individual stages (mirrors the T1-T7 pipeline):
 uv run python cli.py scan /path/to/directory --dry-run
@@ -64,9 +66,12 @@ do not expose `st_birthtime`.
 
 Snapshots and downstream artifacts carry optional `scope` and `provenance`
 metadata. `summarize-subtree` accepts a normalized POSIX relative path,
-includes exactly that node and its descendants, and never changes the source
-artifacts. Use `--dry-run` to inspect the report without writing the derived
-snapshot, classification, or report. A missing subtree path is an error.
+includes exactly that node and its descendants as a canonical tree rooted at
+`.`, composes scopes when its input is already scoped, and never changes the
+source artifacts. Derived output names include a scope hash and refuse source,
+duplicate, or existing output paths. Use `--dry-run` to inspect the report
+without writing the derived snapshot, classification, or report. A missing
+subtree path is an error.
 
 On Windows, scanner availability is checked with `GetFileAttributesW` only
 (file content is never opened for this check). Cloud-only placeholders are
