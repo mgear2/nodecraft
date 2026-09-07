@@ -9,24 +9,37 @@ diagram, gate on human approval, then execute and log the changes.
 
 ## Quick start
 
+This project uses [uv](https://docs.astral.sh/uv/) for environments and
+dependencies, [Ruff](https://docs.astral.sh/ruff/) for linting and formatting,
+and [ty](https://docs.astral.sh/ty/) for type checking.
+
 ```sh
-pip install jsonschema
+uv sync
+
+# Run checks
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run ty check
 
 # Full pipeline, interactive approval prompt:
-python3 cli.py run /path/to/directory
+uv run python cli.py run /path/to/directory
 
 # Full pipeline, skip the prompt (approves iteration 1 automatically —
 # use only for trusted/CI runs):
-python3 cli.py run /path/to/directory --auto-approve
+uv run python cli.py run /path/to/directory --auto-approve
 
 # Individual stages (mirrors the T1-T7 pipeline):
-python3 cli.py scan /path/to/directory --dry-run
-python3 cli.py classify runs/<run_id>/tree_snapshot.json --dry-run
-python3 cli.py render runs/<run_id>/tree_snapshot.json runs/<run_id>/classification.v1.json --dry-run
-python3 cli.py approve runs/<run_id>/proposal.v1.json --decision approve
-python3 cli.py execute /path/to/directory runs/<run_id>/proposal.v1.json runs/<run_id>/approval_decision.v1.json --dry-run
-python3 cli.py summarize runs/<run_id>/execution_log.json --dry-run
+uv run python cli.py scan /path/to/directory --dry-run
+uv run python cli.py classify runs/<run_id>/tree_snapshot.json --dry-run
+uv run python cli.py render runs/<run_id>/tree_snapshot.json runs/<run_id>/classification.v1.json --dry-run
+uv run python cli.py approve runs/<run_id>/proposal.v1.json --decision approve
+uv run python cli.py execute /path/to/directory runs/<run_id>/proposal.v1.json runs/<run_id>/approval_decision.v1.json --dry-run
+uv run python cli.py summarize runs/<run_id>/execution_log.json --dry-run
 ```
+
+Use `uv sync --extra llm` to install the optional Anthropic dependency needed
+by `--backend llm`.
 
 ## Layout
 

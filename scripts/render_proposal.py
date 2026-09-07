@@ -7,12 +7,13 @@ proposal.json (including a human-readable, inline-annotated diagram).
 Depends only on the schemas (I1), not on the Scanner or Classifier scripts
 themselves — built and unit-tested against fixture JSON.
 """
+
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import trace  # noqa: E402
@@ -51,19 +52,23 @@ def render_diagram(nodes_by_id: dict[str, dict], classifications: list[dict]) ->
     return "\n".join(lines)
 
 
-def build_changes(classifications: list[dict], nodes_by_id: dict[str, dict]) -> list[dict]:
-    changes = []
+def build_changes(
+    classifications: list[dict], nodes_by_id: dict[str, dict]
+) -> list[dict[str, Any]]:
+    changes: list[dict[str, Any]] = []
     for c in classifications:
         if c["recommended_action"] in ACTIONABLE:
             node = nodes_by_id.get(c["node_id"])
             if node is None:
                 continue  # classification references a node not in this snapshot; skip defensively
-            changes.append({
-                "node_id": c["node_id"],
-                "action": c["recommended_action"],
-                "from_path": node["path"],
-                "to_path": c.get("target_path"),
-            })
+            changes.append(
+                {
+                    "node_id": c["node_id"],
+                    "action": c["recommended_action"],
+                    "from_path": node["path"],
+                    "to_path": c.get("target_path"),
+                }
+            )
     changes.sort(key=lambda ch: ch["from_path"])
     return changes
 
@@ -87,7 +92,9 @@ def render_proposal(snapshot: dict, classification: dict, iteration: int | None 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="I6/T3: render a proposal from snapshot + classification")
+    parser = argparse.ArgumentParser(
+        description="I6/T3: render a proposal from snapshot + classification"
+    )
     parser.add_argument("snapshot_path")
     parser.add_argument("classification_path")
     parser.add_argument("--out", default=None)
@@ -102,7 +109,10 @@ def main() -> None:
 
     if args.dry_run:
         print(proposal["diagram"])
-        print(f"\n[dry-run] {len(proposal['changes'])} actionable changes; not written.", file=sys.stderr)
+        print(
+            f"\n[dry-run] {len(proposal['changes'])} actionable changes; not written.",
+            file=sys.stderr,
+        )
     else:
         write_validated(proposal, "proposal", out_path)
         print(f"wrote {out_path} ({len(proposal['changes'])} actionable changes)")

@@ -11,6 +11,7 @@ Deletes default to archiving into a `.trash/<run_id>/` location rather than
 permanent removal, per A.4's reversibility requirement, unless
 --permanent-delete is explicitly passed.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -51,10 +52,16 @@ def execute_operation(root: Path, change: dict, trash_dir: Path, permanent_delet
             shutil.move(str(from_abs), str(to_abs))
 
         elif action == "archive":
-            to_abs = root / change["to_path"] if change.get("to_path") else trash_dir / change["from_path"]
+            to_abs = (
+                root / change["to_path"]
+                if change.get("to_path")
+                else trash_dir / change["from_path"]
+            )
             _ensure_parent(to_abs)
             shutil.move(str(from_abs), str(to_abs))
-            op["to_path"] = str(to_abs.relative_to(root)) if to_abs.is_relative_to(root) else str(to_abs)
+            op["to_path"] = (
+                str(to_abs.relative_to(root)) if to_abs.is_relative_to(root) else str(to_abs)
+            )
 
         elif action == "delete":
             if permanent_delete:
@@ -84,7 +91,11 @@ def generate_undo_script(operations: list[dict], root: Path) -> str:
         if op["status"] != "success":
             continue
         if op["action"] in ("move", "rename", "archive") and op.get("to_path"):
-            to_abs = root / op["to_path"] if not Path(op["to_path"]).is_absolute() else Path(op["to_path"])
+            to_abs = (
+                root / op["to_path"]
+                if not Path(op["to_path"]).is_absolute()
+                else Path(op["to_path"])
+            )
             from_abs = root / op["from_path"]
             lines.append(f'mkdir -p "{from_abs.parent}"')
             lines.append(f'mv "{to_abs}" "{from_abs}"')
@@ -94,7 +105,7 @@ def generate_undo_script(operations: list[dict], root: Path) -> str:
             lines.append(f'mkdir -p "{from_abs.parent}"')
             lines.append(f'mv "{to_abs}" "{from_abs}"')
         elif op["action"] == "delete" and not op.get("to_path"):
-            lines.append(f'# IRREVERSIBLE: {op["from_path"]} was permanently deleted')
+            lines.append(f"# IRREVERSIBLE: {op['from_path']} was permanently deleted")
     return "\n".join(lines) + "\n"
 
 
@@ -141,8 +152,11 @@ def main() -> None:
     parser.add_argument("approval_decision_path")
     parser.add_argument("--out", default=None, help="execution_log.json output path")
     parser.add_argument("--undo-out", default=None, help="undo.sh output path")
-    parser.add_argument("--permanent-delete", action="store_true",
-                         help="skip trash archival; irreversibly delete (default: archive to .trash/)")
+    parser.add_argument(
+        "--permanent-delete",
+        action="store_true",
+        help="skip trash archival; irreversibly delete (default: archive to .trash/)",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 

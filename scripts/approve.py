@@ -12,6 +12,7 @@ approval_decision.json. Supports two modes:
 This is the first task that depends on I6's actual output format (the
 rendered diagram text), not just the proposal schema.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,7 +27,7 @@ from lib.validate import validate_file, write_validated  # noqa: E402
 def capture_decision_interactive(proposal: dict, decided_by: str) -> dict:
     print(proposal["diagram"])
     print()
-    print(f"{len(proposal['changes'])} actionable changes proposed (iteration {proposal['iteration']}).")
+    print(f"{len(proposal['changes'])} changes proposed (iteration {proposal['iteration']}).")
     answer = input("Approve? [y/N]: ").strip().lower()
 
     if answer == "y":
@@ -53,12 +54,18 @@ def build_decision(proposal: dict, decision: str, feedback: str | None, decided_
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="I7/T4: capture an approval decision for a proposal")
+    parser = argparse.ArgumentParser(
+        description="I7/T4: capture an approval decision for a proposal"
+    )
     parser.add_argument("proposal_path")
     parser.add_argument("--out", default=None)
     parser.add_argument("--decided-by", default="operator")
-    parser.add_argument("--decision", choices=["approve", "reject"], default=None,
-                         help="non-interactive mode: skip the prompt")
+    parser.add_argument(
+        "--decision",
+        choices=["approve", "reject"],
+        default=None,
+        help="non-interactive mode: skip the prompt",
+    )
     parser.add_argument("--feedback", default=None)
     args = parser.parse_args()
 
@@ -69,7 +76,9 @@ def main() -> None:
     else:
         decision = capture_decision_interactive(proposal, args.decided_by)
 
-    out_path = args.out or f"runs/{proposal['run_id']}/approval_decision.v{proposal['iteration']}.json"
+    out_path = (
+        args.out or f"runs/{proposal['run_id']}/approval_decision.v{proposal['iteration']}.json"
+    )
     write_validated(decision, "approval_decision", out_path)
     print(f"wrote {out_path}: decision={decision['decision']}")
 

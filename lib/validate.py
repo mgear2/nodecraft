@@ -5,6 +5,7 @@ Every inter-task artifact must be validated against its JSON Schema before
 being written or consumed. This is the single choke point all scripts use,
 so a schema change only has to be reflected in one place.
 """
+
 from __future__ import annotations
 
 import json
@@ -12,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import ValidationError
 
 SCHEMA_DIR = Path(__file__).resolve().parent.parent / "schemas"
 
@@ -24,7 +24,7 @@ _SCHEMA_FILENAMES = {
     "execution_log": "execution_log.schema.json",
 }
 
-_validator_cache: dict[str, Draft202012Validator] = {}
+_validator_cache: dict[str, Any] = {}
 
 
 class SchemaValidationError(Exception):
@@ -44,11 +44,10 @@ class SchemaValidationError(Exception):
         )
 
 
-def _get_validator(schema_name: str) -> Draft202012Validator:
+def _get_validator(schema_name: str) -> Any:
     if schema_name not in _SCHEMA_FILENAMES:
         raise KeyError(
-            f"Unknown schema '{schema_name}'. Known schemas: "
-            f"{sorted(_SCHEMA_FILENAMES)}"
+            f"Unknown schema '{schema_name}'. Known schemas: {sorted(_SCHEMA_FILENAMES)}"
         )
     if schema_name not in _validator_cache:
         schema_path = SCHEMA_DIR / _SCHEMA_FILENAMES[schema_name]

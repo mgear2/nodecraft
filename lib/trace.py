@@ -6,12 +6,13 @@ can carry enough provenance to be traced back to exactly what produced it.
 Deliberately has zero dependency on the schemas (I1) or validator (I2) so it
 can be built/tested fully in parallel with them.
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,7 @@ def new_proposal_id() -> str:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def hash_bytes(data: bytes) -> str:

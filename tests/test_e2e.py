@@ -5,6 +5,7 @@ Exercises the full runtime pipeline (T1-T7) against a fresh copy of the
 fixture tree, including one reject-with-feedback -> revise -> re-approve
 cycle, which none of the per-component unit tests cover in isolation.
 """
+
 import json
 import shutil
 import sys
@@ -120,6 +121,7 @@ def test_e2e_max_iterations_exceeded(tmp_path):
         }
 
     from orchestrator import MaxIterationsExceeded
+
     try:
         run_pipeline(str(tree), always_reject, runs_dir=str(runs_dir), max_iterations=2)
         assert False, "should have raised MaxIterationsExceeded"

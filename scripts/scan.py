@@ -6,6 +6,7 @@ Deterministic, pure filesystem walk. Depends only on the tree_snapshot
 schema (I1) and the shared validate/trace utilities (I2/I3) — not on any
 other script in the pipeline.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -13,6 +14,7 @@ import mimetypes
 import os
 import stat
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -50,22 +52,24 @@ def scan_tree(root_path: str, excludes: set[str] | None = None) -> list[dict]:
             rel_path = str(full_path.relative_to(root))
             try:
                 st = os.lstat(full_path)
-            except OSError as e:
+            except OSError:
                 # Unreadable node: still record it as `unknown`-ish rather
                 # than silently dropping it, so the operator sees it.
-                nodes.append({
-                    "node_id": _node_id(rel_path),
-                    "path": rel_path,
-                    "type": "file",
-                    "size_bytes": None,
-                    "mtime": None,
-                    "ctime": None,
-                    "extension": full_path.suffix or None,
-                    "content_type": None,
-                    "content_hash": None,
-                    "symlink_target": None,
-                    "permissions": None,
-                })
+                nodes.append(
+                    {
+                        "node_id": _node_id(rel_path),
+                        "path": rel_path,
+                        "type": "file",
+                        "size_bytes": None,
+                        "mtime": None,
+                        "ctime": None,
+                        "extension": full_path.suffix or None,
+                        "content_type": None,
+                        "content_hash": None,
+                        "symlink_target": None,
+                        "permissions": None,
+                    }
+                )
                 continue
 
             is_symlink = stat.S_ISLNK(st.st_mode)
@@ -90,23 +94,25 @@ def scan_tree(root_path: str, excludes: set[str] | None = None) -> list[dict]:
                 except OSError:
                     symlink_target = None
 
-            nodes.append({
-                "node_id": _node_id(rel_path),
-                "path": rel_path,
-                "type": node_type,
-                "size_bytes": st.st_size if node_type == "file" else None,
-                "mtime": trace.datetime.fromtimestamp(
-                    st.st_mtime, tz=trace.timezone.utc
-                ).isoformat(timespec="seconds"),
-                "ctime": trace.datetime.fromtimestamp(
-                    st.st_ctime, tz=trace.timezone.utc
-                ).isoformat(timespec="seconds"),
-                "extension": full_path.suffix or None,
-                "content_type": content_type,
-                "content_hash": content_hash,
-                "symlink_target": symlink_target,
-                "permissions": oct(stat.S_IMODE(st.st_mode)),
-            })
+            nodes.append(
+                {
+                    "node_id": _node_id(rel_path),
+                    "path": rel_path,
+                    "type": node_type,
+                    "size_bytes": st.st_size if node_type == "file" else None,
+                    "mtime": datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(
+                        timespec="seconds"
+                    ),
+                    "ctime": datetime.fromtimestamp(st.st_ctime, tz=UTC).isoformat(
+                        timespec="seconds"
+                    ),
+                    "extension": full_path.suffix or None,
+                    "content_type": content_type,
+                    "content_hash": content_hash,
+                    "symlink_target": symlink_target,
+                    "permissions": oct(stat.S_IMODE(st.st_mode)),
+                }
+            )
 
     nodes.sort(key=lambda n: n["path"])
     return nodes
@@ -126,8 +132,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="I4/T1: scan a directory tree")
     parser.add_argument("root_path")
     parser.add_argument("--run-id", default=None, help="reuse an existing run_id")
-    parser.add_argument("--out", default=None, help="output path (default: runs/<run_id>/tree_snapshot.json)")
-    parser.add_argument("--exclude", action="append", default=[], help="directory name to exclude (repeatable)")
+    parser.add_argument(
+        "--out", default=None, help="output path (default: runs/<run_id>/tree_snapshot.json)"
+    )
+    parser.add_argument(
+        "--exclude", action="append", default=[], help="directory name to exclude (repeatable)"
+    )
     parser.add_argument("--dry-run", action="store_true", help="print result, do not write file")
     args = parser.parse_args()
 
@@ -139,6 +149,7 @@ def main() -> None:
 
     if args.dry_run:
         import json
+
         print(json.dumps(snapshot, indent=2))
         print(f"\n[dry-run] {len(snapshot['nodes'])} nodes scanned; not written.", file=sys.stderr)
     else:

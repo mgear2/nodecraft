@@ -1,6 +1,5 @@
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -49,12 +48,21 @@ def test_execute_moves_and_archives(tmp_path):
 def test_execute_refuses_without_approval(tmp_path):
     _make_tree(tmp_path)
     proposal = {
-        "schema_version": "1.0", "proposal_id": "p1", "run_id": "r1",
-        "iteration": 1, "based_on_input_hash": "x", "diagram": "n/a", "changes": [],
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "run_id": "r1",
+        "iteration": 1,
+        "based_on_input_hash": "x",
+        "diagram": "n/a",
+        "changes": [],
     }
     bad_approval = {
-        "schema_version": "1.0", "proposal_id": "p1", "decision": "reject",
-        "feedback": "no", "decided_at": trace.now_iso(), "decided_by": "test",
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "decision": "reject",
+        "feedback": "no",
+        "decided_at": trace.now_iso(),
+        "decided_by": "test",
     }
     try:
         execute_proposal(str(tmp_path), proposal, bad_approval)
@@ -66,12 +74,21 @@ def test_execute_refuses_without_approval(tmp_path):
 def test_execute_refuses_mismatched_proposal_id(tmp_path):
     _make_tree(tmp_path)
     proposal = {
-        "schema_version": "1.0", "proposal_id": "p1", "run_id": "r1",
-        "iteration": 1, "based_on_input_hash": "x", "diagram": "n/a", "changes": [],
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "run_id": "r1",
+        "iteration": 1,
+        "based_on_input_hash": "x",
+        "diagram": "n/a",
+        "changes": [],
     }
     approval = {
-        "schema_version": "1.0", "proposal_id": "DIFFERENT", "decision": "approve",
-        "feedback": None, "decided_at": trace.now_iso(), "decided_by": "test",
+        "schema_version": "1.0",
+        "proposal_id": "DIFFERENT",
+        "decision": "approve",
+        "feedback": None,
+        "decided_at": trace.now_iso(),
+        "decided_by": "test",
     }
     try:
         execute_proposal(str(tmp_path), proposal, approval)
@@ -86,14 +103,23 @@ def test_undo_script_actually_reverses_move(tmp_path):
     it was generated."""
     _make_tree(tmp_path)
     proposal = {
-        "schema_version": "1.0", "proposal_id": "p1", "run_id": "r1",
-        "iteration": 1, "based_on_input_hash": "x", "diagram": "n/a",
-        "changes": [{"node_id": "n1", "action": "move", "from_path": "keep.py",
-                     "to_path": "src/keep.py"}],
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "run_id": "r1",
+        "iteration": 1,
+        "based_on_input_hash": "x",
+        "diagram": "n/a",
+        "changes": [
+            {"node_id": "n1", "action": "move", "from_path": "keep.py", "to_path": "src/keep.py"}
+        ],
     }
     approval = {
-        "schema_version": "1.0", "proposal_id": "p1", "decision": "approve",
-        "feedback": None, "decided_at": trace.now_iso(), "decided_by": "test",
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "decision": "approve",
+        "feedback": None,
+        "decided_at": trace.now_iso(),
+        "decided_by": "test",
     }
 
     log, undo_script = execute_proposal(str(tmp_path), proposal, approval)

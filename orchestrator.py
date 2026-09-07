@@ -16,6 +16,7 @@ This is the one task that needed every other component's real interface
 finalized (I4, I5/I8, I6, I7, I9, I10) rather than just a schema, since it
 calls their functions directly.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -126,6 +127,7 @@ def run_pipeline(
     manifest_path = rdir / "run_manifest.json"
     summary_path.write_text(summary_md)
     import json
+
     manifest_path.write_text(json.dumps(manifest, indent=2))
     artifacts["summary"] = str(summary_path)
     artifacts["run_manifest"] = str(manifest_path)
@@ -140,6 +142,7 @@ def run_pipeline(
 
 def interactive_approval_callback(proposal: dict) -> dict:
     from scripts.approve import capture_decision_interactive
+
     return capture_decision_interactive(proposal, decided_by="operator")
 
 
@@ -150,12 +153,16 @@ def main() -> None:
     parser.add_argument("--max-iterations", type=int, default=5)
     parser.add_argument("--runs-dir", default="runs")
     parser.add_argument("--permanent-delete", action="store_true")
-    parser.add_argument("--auto-approve", action="store_true",
-                         help="skip the interactive prompt and approve iteration 1 "
-                              "(useful for scripted/CI runs; use with care)")
+    parser.add_argument(
+        "--auto-approve",
+        action="store_true",
+        help="skip the interactive prompt and approve iteration 1 "
+        "(useful for scripted/CI runs; use with care)",
+    )
     args = parser.parse_args()
 
     if args.auto_approve:
+
         def callback(proposal):
             return {
                 "schema_version": trace.SCHEMA_VERSION,

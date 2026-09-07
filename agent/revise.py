@@ -8,6 +8,7 @@ duplicating logic — the only difference from a fresh classification pass is
 that operator feedback is threaded into the backend call and the iteration
 counter is bumped.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,7 +22,9 @@ from lib.validate import validate_file, write_validated  # noqa: E402
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="I8/T5: revise classification using operator feedback")
+    parser = argparse.ArgumentParser(
+        description="I8/T5: revise classification using operator feedback"
+    )
     parser.add_argument("snapshot_path")
     parser.add_argument("approval_decision_path")
     parser.add_argument("--out", default=None)

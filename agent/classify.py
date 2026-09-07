@@ -9,6 +9,7 @@ without a live LLM call, then swapped to a real backend with no change to
 the surrounding script. This mirrors the DAG note that I5 only depends on
 schemas (I1), not on I4's actual output.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -64,39 +65,88 @@ class HeuristicBackend:
 
         if node["type"] == "directory":
             if any(p in self.CACHE_DIRS for p in parts):
-                return self._result("build/cache directory", "cache", "delete", None, 0.7,
-                                     "Directory name matches known cache/build output pattern")
-            return self._result("directory", "unknown", "keep", None, 0.5, "No strong signal; default to keep")
+                return self._result(
+                    "build/cache directory",
+                    "cache",
+                    "delete",
+                    None,
+                    0.7,
+                    "Directory name matches known cache/build output pattern",
+                )
+            return self._result(
+                "directory", "unknown", "keep", None, 0.5, "No strong signal; default to keep"
+            )
 
         if any(p in self.CACHE_DIRS for p in parts) or ext in self.BUILD_EXTS:
-            return self._result("build artifact", "build_artifact", "delete", None, 0.85,
-                                 "Extension/location matches known build-output pattern")
+            return self._result(
+                "build artifact",
+                "build_artifact",
+                "delete",
+                None,
+                0.85,
+                "Extension/location matches known build-output pattern",
+            )
 
         if self.BACKUP_PATTERN.search(path):
-            return self._result("backup file", "cache", "archive", f"_archive/{path}", 0.75,
-                                 "Filename suffix indicates a manual backup copy")
+            return self._result(
+                "backup file",
+                "cache",
+                "archive",
+                f"_archive/{path}",
+                0.75,
+                "Filename suffix indicates a manual backup copy",
+            )
 
         if self.LOG_PATTERN.search(path):
-            return self._result("old log file", "cache", "archive", f"_archive/{path}", 0.7,
-                                 "Dated/old log file, likely safe to archive rather than keep in place")
+            return self._result(
+                "old log file",
+                "cache",
+                "archive",
+                f"_archive/{path}",
+                0.7,
+                "Dated/old log file; likely safe to archive",
+            )
 
         dup_map = self._duplicate_map(all_nodes)
         h = node.get("content_hash")
         if h and len(dup_map.get(h, [])) > 1 and dup_map[h][0] != node["node_id"]:
-            return self._result("duplicate content", "duplicate", "review", None, 0.6,
-                                 "Content hash matches another file in the tree; flagged for human review before deletion")
+            return self._result(
+                "duplicate content",
+                "duplicate",
+                "review",
+                None,
+                0.6,
+                "Content hash matches another file; flagged for human review before deletion",
+            )
 
         if ext in {".py", ".js", ".ts", ".go", ".rs", ".java", ".c", ".cpp"}:
-            return self._result("source code", "source", "keep", None, 0.9, "Recognized source-code extension")
+            return self._result(
+                "source code", "source", "keep", None, 0.9, "Recognized source-code extension"
+            )
 
         if ext in {".md", ".rst", ".txt"} or "docs" in parts:
-            return self._result("documentation", "docs", "keep", None, 0.8, "Recognized documentation location/extension")
+            return self._result(
+                "documentation",
+                "docs",
+                "keep",
+                None,
+                0.8,
+                "Recognized documentation location/extension",
+            )
 
         if ext in {".yml", ".yaml", ".toml", ".ini", ".json", ".cfg"}:
-            return self._result("configuration", "config", "keep", None, 0.75, "Recognized config file extension")
+            return self._result(
+                "configuration", "config", "keep", None, 0.75, "Recognized config file extension"
+            )
 
-        return self._result("unclassified", "unknown", "review", None, 0.4,
-                             "No rule matched confidently; flagged for human review")
+        return self._result(
+            "unclassified",
+            "unknown",
+            "review",
+            None,
+            0.4,
+            "No rule matched confidently; flagged for human review",
+        )
 
     @staticmethod
     def _result(purpose, category, action, target, confidence, rationale) -> dict:
@@ -141,8 +191,7 @@ class LLMBackend:
             except (json.JSONDecodeError, ValueError) as e:
                 last_error = e
                 prompt = (
-                    prompt
-                    + f"\n\nYour previous response was invalid ({e}). "
+                    prompt + f"\n\nYour previous response was invalid ({e}). "
                     "Return ONLY a single valid JSON object, no prose, no markdown fences."
                 )
         raise RuntimeError(f"LLM classifier failed schema validation after retries: {last_error}")
@@ -197,7 +246,9 @@ def main() -> None:
     parser.add_argument("snapshot_path")
     parser.add_argument("--out", default=None)
     parser.add_argument("--backend", choices=["heuristic", "llm"], default="heuristic")
-    parser.add_argument("--feedback", default=None, help="operator feedback for a revision pass (T5)")
+    parser.add_argument(
+        "--feedback", default=None, help="operator feedback for a revision pass (T5)"
+    )
     parser.add_argument("--iteration", type=int, default=1)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()

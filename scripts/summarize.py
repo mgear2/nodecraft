@@ -5,6 +5,7 @@ I10 — Summary generator (T7 in the runtime pipeline).
 Pure report generation from execution_log.json. Needs only that one
 schema, so it was built independently of every other component.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -60,7 +61,9 @@ def build_manifest(log: dict) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="I10/T7: generate summary artifacts from an execution_log")
+    parser = argparse.ArgumentParser(
+        description="I10/T7: generate summary artifacts from an execution_log"
+    )
     parser.add_argument("execution_log_path")
     parser.add_argument("--summary-out", default=None)
     parser.add_argument("--manifest-out", default=None)

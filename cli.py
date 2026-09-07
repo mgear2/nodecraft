@@ -7,6 +7,7 @@ is installable/runnable as a single `filetree` command with subcommands
 mirroring the pipeline stages, or `filetree run` for the full orchestrated
 pipeline.
 """
+
 from __future__ import annotations
 
 import sys
@@ -27,27 +28,35 @@ def main() -> None:
 
     if command == "run":
         import orchestrator
+
         orchestrator.main()
     elif command == "scan":
         import scripts.scan as scan
+
         scan.main()
     elif command == "classify":
         import agent.classify as classify
+
         classify.main()
     elif command == "revise":
         import agent.revise as revise
+
         revise.main()
     elif command == "render":
         import scripts.render_proposal as render_proposal
+
         render_proposal.main()
     elif command == "approve":
         import scripts.approve as approve
+
         approve.main()
     elif command == "execute":
         import scripts.execute as execute
+
         execute.main()
     elif command == "summarize":
         import scripts.summarize as summarize
+
         summarize.main()
     else:
         print(f"Unknown command: {command}")
