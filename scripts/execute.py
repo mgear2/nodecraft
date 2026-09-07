@@ -72,6 +72,9 @@ def execute_operation(
         "status": "success",
         "error": None,
     }
+    provenance = change.get("provenance", {}).get("source_artifacts", [])
+    if provenance and provenance[0].get("chunk_id"):
+        op["chunk_id"] = provenance[0]["chunk_id"]
 
     try:
         _validate_change(root, change, scope_path=scope_path)
@@ -184,6 +187,12 @@ def execute_proposal(
         raise ValueError(
             "Executor refuses to run: approval_decision.proposal_id does not match "
             "the proposal being executed (safety check per NFR 'Safety')"
+        )
+    expected_hash = approval.get("proposal_content_hash")
+    if expected_hash and expected_hash != trace.hash_json_artifact(proposal):
+        raise ValueError(
+            "Executor refuses to run: approval_decision.proposal_content_hash "
+            "does not match the proposal"
         )
 
     root = Path(root_path).resolve()

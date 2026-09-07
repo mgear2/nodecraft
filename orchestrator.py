@@ -20,6 +20,7 @@ calls their functions directly.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -130,6 +131,8 @@ def run_pipeline(
 
         # T4 (human gate — via injected callback)
         approval = approval_callback(proposal)
+        approval.setdefault("proposal_content_hash", trace.hash_json_artifact(proposal))
+        approval.setdefault("change_count", len(proposal["changes"]))
         progress.stage("waiting for approval")
         approval_path = rdir / f"approval_decision.v{iteration}.json"
         write_validated(approval, "approval_decision", approval_path)
@@ -159,6 +162,8 @@ def run_pipeline(
     undo_path.write_text(undo_script)
     undo_path.chmod(0o755)
     log["undo_script_path"] = str(undo_path)
+    log["proposal_content_hash"] = trace.hash_json_artifact(proposal)
+    log["change_count"] = len(proposal["changes"])
     log_path = rdir / "execution_log.json"
     write_validated(log, "execution_log", log_path)
     artifacts["execution_log"] = str(log_path)
@@ -171,8 +176,6 @@ def run_pipeline(
     summary_path = rdir / "summary.md"
     manifest_path = rdir / "run_manifest.json"
     summary_path.write_text(summary_md)
-    import json
-
     manifest_path.write_text(json.dumps(manifest, indent=2))
     artifacts["summary"] = str(summary_path)
     artifacts["run_manifest"] = str(manifest_path)

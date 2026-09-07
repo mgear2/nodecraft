@@ -46,6 +46,8 @@ def build_decision(proposal: dict, decision: str, feedback: str | None, decided_
     return {
         "schema_version": trace.SCHEMA_VERSION,
         "proposal_id": proposal["proposal_id"],
+        "proposal_content_hash": trace.hash_json_artifact(proposal),
+        "change_count": len(proposal["changes"]),
         "decision": decision,
         "feedback": feedback,
         "decided_at": trace.now_iso(),

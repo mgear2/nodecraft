@@ -7,6 +7,8 @@
   "properties": {
     "schema_version": { "type": "string" },
     "proposal_id": { "type": "string" },
+    "proposal_content_hash": { "type": "string" },
+    "change_count": { "type": "integer", "minimum": 0 },
     "decision": { "enum": ["approve", "reject"] },
     "feedback": { "type": ["string", "null"] },
     "decided_at": { "type": "string", "format": "date-time" },

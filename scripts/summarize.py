@@ -31,6 +31,7 @@ def render_summary_md(log: dict) -> str:
         f"- Completed: {log['completed_at']}",
         f"- Operations: {len(ops)} total "
         f"({', '.join(f'{v} {k}' for k, v in sorted(by_status.items()))})",
+        f"- Chunks represented: {len({op.get('chunk_id') for op in ops if op.get('chunk_id')})}",
         f"- Undo script: `{log.get('undo_script_path') or 'n/a'}`",
         "",
         "## Operations",
@@ -57,7 +58,17 @@ def build_manifest(log: dict) -> dict:
         "operation_count": len(ops),
         "by_status": by_status,
         "undo_script_path": log.get("undo_script_path"),
+        "change_count": log.get("change_count", len(ops)),
     }
+    chunk_status: dict[str, dict[str, int]] = {}
+    for operation in ops:
+        chunk_id = operation.get("chunk_id")
+        if chunk_id:
+            status = operation["status"]
+            chunk_status.setdefault(chunk_id, {}).setdefault(status, 0)
+            chunk_status[chunk_id][status] += 1
+    if chunk_status:
+        manifest["chunks"] = chunk_status
     if "scope" in log:
         manifest["scope"] = log["scope"]
     return manifest

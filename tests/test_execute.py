@@ -228,3 +228,26 @@ def test_execute_rejects_duplicate_destinations(tmp_path):
     }
     with pytest.raises(ValueError, match="duplicate"):
         execute_proposal(str(tmp_path), proposal, {"proposal_id": "p1", "decision": "approve"})
+
+
+def test_execute_rejects_stale_proposal_content_hash(tmp_path):
+    _make_tree(tmp_path)
+    proposal = {
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "run_id": "r1",
+        "iteration": 1,
+        "based_on_input_hash": "x",
+        "diagram": "n/a",
+        "changes": [],
+    }
+    with pytest.raises(ValueError, match="content_hash"):
+        execute_proposal(
+            str(tmp_path),
+            proposal,
+            {
+                "proposal_id": "p1",
+                "decision": "approve",
+                "proposal_content_hash": "stale",
+            },
+        )

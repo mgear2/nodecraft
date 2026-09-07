@@ -104,6 +104,9 @@ def test_e2e_reject_then_approve_cycle(tmp_path):
     assert v1_decision["decision"] == "reject"
     v2_decision = json.loads((rdir / "approval_decision.v2.json").read_text())
     assert v2_decision["decision"] == "approve"
+    proposal_v2 = json.loads((rdir / "proposal.v2.json").read_text())
+    assert v2_decision["proposal_content_hash"] == trace.hash_json_artifact(proposal_v2)
+    assert v2_decision["change_count"] == len(proposal_v2["changes"])
 
 
 def test_e2e_max_iterations_exceeded(tmp_path):

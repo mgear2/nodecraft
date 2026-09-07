@@ -8,6 +8,8 @@
     "schema_version": { "type": "string" },
     "run_id": { "type": "string" },
     "proposal_id": { "type": "string" },
+    "proposal_content_hash": { "type": "string" },
+    "change_count": { "type": "integer", "minimum": 0 },
     "started_at": { "type": "string", "format": "date-time" },
     "completed_at": { "type": "string", "format": "date-time" },
     "scope": {
@@ -32,6 +34,7 @@
           "to_path": { "type": ["string", "null"] },
           "status": { "enum": ["success", "failed", "skipped"] },
           "error": { "type": ["string", "null"] }
+          ,"chunk_id": { "type": "string" }
         }
       }
     },

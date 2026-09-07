@@ -80,6 +80,12 @@ classification artifacts under `chunks/classifications/`, and atomically updates
 the manifest with per-chunk and aggregate classification status. The full
 orchestrator uses this same path; it never reassembles a giant snapshot.
 
+The rendered proposal is global even though its inputs are chunked: reconciliation
+rejects conflicting destinations and overlapping source paths before approval.
+Approval artifacts bind to the exact proposal content hash and change count.
+Execution preserves each operation's originating chunk ID, and the final summary
+includes per-chunk operation status counts.
+
 On Windows, scanner availability is checked with `GetFileAttributesW` only
 (file content is never opened for this check). Cloud-only placeholders are
 marked with `availability: "cloud_only"` and are never hashed. Pass
