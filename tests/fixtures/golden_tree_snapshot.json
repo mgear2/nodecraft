@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "run_id": "fixture-run",
-  "root_path": "/home/claude/file-tree-pipeline/test/fixtures/sample_tree",
+  "root_path": "/workspaces/nodecraft/tests/fixtures/sample_tree",
   "generated_at": "2026-09-06T22:34:00+00:00",
   "nodes": [
     {
