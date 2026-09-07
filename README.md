@@ -1,9 +1,6 @@
 # nodecraft
 
-## File Tree Classification & Reorganization Pipeline
-
-Implementation of the spec's Section B (runtime pipeline) and Section C
-(implementation task DAG). Scan a directory, classify each node's purpose
+Scan a directory, classify each node's purpose
 and recommended action, propose a revised tree with an inline-annotated
 diagram, gate on human approval, then execute and log the changes.
 
