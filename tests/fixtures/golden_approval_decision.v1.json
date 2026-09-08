@@ -4,5 +4,6 @@
   "decision": "approve",
   "feedback": null,
   "decided_at": "2026-01-01T00:00:00+00:00",
-  "decided_by": "fixture"
+  "decided_by": "fixture",
+  "proposal_content_hash": "sha256:461f49411a15d97f4143e273e5d5eb27c221ec6e461cf7610998a5f3fbbad069"
 }

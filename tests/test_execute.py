@@ -7,13 +7,75 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib import trace  # noqa: E402
-from lib.validate import validate  # noqa: E402
+from lib.validate import SchemaValidationError, validate  # noqa: E402
 from scripts.execute import execute_proposal  # noqa: E402
+
+
+def _approve(proposal):
+    return {
+        "proposal_id": proposal["proposal_id"],
+        "decision": "approve",
+        "proposal_content_hash": trace.hash_json_artifact(proposal),
+    }
 
 
 def _make_tree(tmp_path: Path):
     (tmp_path / "a.bak").write_text("hello")
     (tmp_path / "keep.py").write_text("print(1)")
+
+
+@pytest.mark.parametrize("permanent_delete", [False, True])
+def test_implicit_archive_traversal_rejected_before_any_operation(tmp_path, permanent_delete):
+    _make_tree(tmp_path)
+    proposal = {
+        "proposal_id": "p1",
+        "run_id": "../../outside",
+        "changes": [
+            {"node_id": "n1", "action": "move", "from_path": "keep.py", "to_path": "new.py"},
+            {"node_id": "n2", "action": "archive", "from_path": "a.bak"},
+        ],
+    }
+    with pytest.raises(ValueError, match="contained within root"):
+        execute_proposal(str(tmp_path), proposal, _approve(proposal), permanent_delete)
+    assert (tmp_path / "keep.py").exists()
+    assert (tmp_path / "a.bak").exists()
+    assert not (tmp_path / "new.py").exists()
+
+
+def test_permanent_delete_keeps_archives_reversible(tmp_path):
+    _make_tree(tmp_path)
+    proposal = {
+        "proposal_id": "p1",
+        "run_id": "r1",
+        "changes": [
+            {"node_id": "n1", "action": "delete", "from_path": "keep.py"},
+            {"node_id": "n2", "action": "archive", "from_path": "a.bak"},
+        ],
+    }
+    log, undo = execute_proposal(str(tmp_path), proposal, _approve(proposal), True)
+    assert all(op["status"] == "success" for op in log["operations"])
+    assert not (tmp_path / "keep.py").exists()
+    assert not (tmp_path / ".trash/r1/keep.py").exists()
+    assert (tmp_path / ".trash/r1/a.bak").read_text() == "hello"
+    undo_path = tmp_path / "undo.py"
+    undo_path.write_text(undo)
+    subprocess.run([sys.executable, str(undo_path)], check=True)
+    assert (tmp_path / "a.bak").read_text() == "hello"
+
+
+def test_approval_requires_content_hash_for_schema_and_execution(tmp_path):
+    proposal = {"proposal_id": "p1", "changes": []}
+    approval = {
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "decision": "approve",
+        "decided_at": trace.now_iso(),
+        "decided_by": "test",
+    }
+    with pytest.raises(SchemaValidationError, match="proposal_content_hash"):
+        validate(approval, "approval_decision")
+    with pytest.raises(ValueError, match="proposal_content_hash"):
+        execute_proposal(str(tmp_path), proposal, approval)
 
 
 def test_execute_moves_and_archives(tmp_path):
@@ -33,6 +95,7 @@ def test_execute_moves_and_archives(tmp_path):
         "schema_version": "1.0",
         "proposal_id": "p1",
         "decision": "approve",
+        "proposal_content_hash": trace.hash_json_artifact(proposal),
         "feedback": None,
         "decided_at": trace.now_iso(),
         "decided_by": "test",
@@ -88,6 +151,7 @@ def test_execute_refuses_mismatched_proposal_id(tmp_path):
         "schema_version": "1.0",
         "proposal_id": "DIFFERENT",
         "decision": "approve",
+        "proposal_content_hash": trace.hash_json_artifact(proposal),
         "feedback": None,
         "decided_at": trace.now_iso(),
         "decided_by": "test",
@@ -115,6 +179,7 @@ def test_execute_rejects_paths_outside_root(tmp_path):
     approval = {
         "proposal_id": "p1",
         "decision": "approve",
+        "proposal_content_hash": trace.hash_json_artifact(proposal),
     }
     try:
         execute_proposal(str(tmp_path), proposal, approval)
@@ -134,7 +199,7 @@ def test_execute_rejects_move_without_target(tmp_path):
         "diagram": "n/a",
         "changes": [{"node_id": "n1", "action": "move", "from_path": "keep.py", "to_path": None}],
     }
-    approval = {"proposal_id": "p1", "decision": "approve"}
+    approval = _approve(proposal)
     try:
         execute_proposal(str(tmp_path), proposal, approval)
         assert False, "should have raised"
@@ -162,6 +227,7 @@ def test_undo_script_actually_reverses_move(tmp_path):
         "schema_version": "1.0",
         "proposal_id": "p1",
         "decision": "approve",
+        "proposal_content_hash": trace.hash_json_artifact(proposal),
         "feedback": None,
         "decided_at": trace.now_iso(),
         "decided_by": "test",
@@ -198,7 +264,7 @@ def test_portable_subtree_executes_at_explicit_mount_and_preserves_origin(tmp_pa
         },
         "changes": [{"node_id": "n1", "action": "delete", "from_path": "old.bak", "to_path": None}],
     }
-    approval = {"proposal_id": "p1", "decision": "approve"}
+    approval = _approve(proposal)
 
     log, undo_script = execute_proposal(str(scoped), proposal, approval)
 
@@ -227,7 +293,7 @@ def test_execute_does_not_treat_origin_as_a_filesystem_target(tmp_path):
         "changes": [{"node_id": "n1", "action": "delete", "from_path": "old.bak", "to_path": None}],
     }
 
-    execute_proposal(str(mount), proposal, {"proposal_id": "p1", "decision": "approve"})
+    execute_proposal(str(mount), proposal, _approve(proposal))
 
     assert not (mount / "old.bak").exists()
     assert (mount / ".trash" / "r1" / "old.bak").exists()
@@ -248,7 +314,7 @@ def test_execute_rejects_duplicate_destinations(tmp_path):
         ],
     }
     with pytest.raises(ValueError, match="duplicate"):
-        execute_proposal(str(tmp_path), proposal, {"proposal_id": "p1", "decision": "approve"})
+        execute_proposal(str(tmp_path), proposal, _approve(proposal))
 
 
 def test_execute_rejects_stale_proposal_content_hash(tmp_path):

@@ -50,6 +50,12 @@ def _validate_change(mount: Path, change: dict) -> None:
         _safe_path(mount, change["to_path"], allow_missing=True)
 
 
+def _trash_path(mount: Path, trash_dir: Path, from_path: str) -> Path:
+    """Resolve an implicit archive/delete destination through mount containment."""
+    destination = trash_dir / from_path
+    return _safe_path(mount, str(destination.relative_to(mount)))
+
+
 def execute_operation(
     mount: Path,
     change: dict,
@@ -86,7 +92,7 @@ def execute_operation(
             to_abs = (
                 _safe_path(mount, change["to_path"])
                 if change.get("to_path")
-                else trash_dir / change["from_path"]
+                else _trash_path(mount, trash_dir, change["from_path"])
             )
             _ensure_parent(to_abs)
             shutil.move(str(from_abs), str(to_abs))
@@ -102,7 +108,7 @@ def execute_operation(
                     from_abs.unlink()
                 op["to_path"] = None
             else:
-                to_abs = trash_dir / change["from_path"]
+                to_abs = _trash_path(mount, trash_dir, change["from_path"])
                 _ensure_parent(to_abs)
                 shutil.move(str(from_abs), str(to_abs))
                 op["to_path"] = str(to_abs.relative_to(mount))
@@ -181,7 +187,7 @@ def execute_proposal(
             "the proposal being executed (safety check per NFR 'Safety')"
         )
     expected_hash = approval.get("proposal_content_hash")
-    if expected_hash and expected_hash != trace.hash_json_artifact(proposal):
+    if expected_hash != trace.hash_json_artifact(proposal):
         raise ValueError(
             "Executor refuses to run: approval_decision.proposal_content_hash "
             "does not match the proposal"
@@ -201,12 +207,10 @@ def execute_proposal(
     seen_destinations: set[str] = set()
     for change in proposal["changes"]:
         destination = change.get("to_path")
-        if (
-            destination is None
-            and not permanent_delete
-            and change["action"] in ("archive", "delete")
+        if (change["action"] == "archive" and not destination) or (
+            change["action"] == "delete" and not permanent_delete
         ):
-            destination_path = trash_dir / change["from_path"]
+            destination_path = _trash_path(mount, trash_dir, change["from_path"])
             destination = str(destination_path.relative_to(mount))
         if destination:
             resolved = _safe_path(mount, destination).resolve()
@@ -253,7 +257,7 @@ def main() -> None:
     parser.add_argument(
         "--permanent-delete",
         action="store_true",
-        help="skip trash archival; irreversibly delete (default: archive to .trash/)",
+        help="irreversibly remove delete operations; archives always remain reversible",
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
