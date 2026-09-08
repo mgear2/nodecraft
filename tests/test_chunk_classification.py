@@ -456,12 +456,13 @@ def test_manifest_checkpoint_rejects_changed_context(tmp_path):
     manifest = validate_file(manifest_path, "chunk_manifest")
     assert manifest["status"]["classification"] == "completed"
 
-    classify_manifest(
-        manifest_path,
-        backend=_InterruptingBackend(interrupt=False),
-        feedback="first context",
-        batch_size=2,
-    )
+    with pytest.raises(ValueError, match="increment --iteration"):
+        classify_manifest(
+            manifest_path,
+            backend=_InterruptingBackend(interrupt=False),
+            feedback="first context",
+            batch_size=2,
+        )
 
 
 def test_manifest_adopts_orphan_final_and_cleans_partial(tmp_path):
@@ -523,3 +524,65 @@ def test_manifest_classification_preserves_duplicate_context_across_chunks(tmp_p
         )
 
     assert sorted(category for _, category in classifications) == ["duplicate", "unknown"]
+
+
+@pytest.mark.parametrize(
+    "changed", [None, "feedback", "model", "backend", "batch_size", "base_url"]
+)
+@pytest.mark.parametrize("orphan", [False, True])
+def test_completed_classification_context_is_immutable(tmp_path, changed, orphan):
+    from lib.validate import write_validated
+
+    class ControlledBackend(HeuristicBackend):
+        model = "model-a"
+        base_url = "http://localhost:11434"
+
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        def classify_nodes(self, nodes, all_nodes, feedback=None):
+            self.calls += 1
+            return super().classify_nodes(nodes, all_nodes, feedback)
+
+    class OtherBackend(ControlledBackend):
+        pass
+
+    root = tmp_path / "tree"
+    root.mkdir()
+    (root / "file.txt").write_text("file")
+    chunks = tmp_path / "chunks"
+    scan_tree_to_chunks(str(root), "immutable-run", chunks, hash_mode="none", max_nodes=10)
+    manifest_path = chunks / "manifest.json"
+    outputs = classify_manifest(manifest_path, backend=ControlledBackend(), batch_size=2)
+    original = outputs[0].read_bytes()
+    original_mtime = outputs[0].stat().st_mtime_ns
+    if orphan:
+        manifest = validate_file(manifest_path, "chunk_manifest")
+        manifest["chunks"][0].pop("classification")
+        write_validated(manifest, "chunk_manifest", manifest_path)
+
+    backend = OtherBackend() if changed == "backend" else ControlledBackend()
+    if changed == "model":
+        backend.model = "model-b"
+    if changed == "base_url":
+        backend.base_url = "http://localhost:11435"
+    feedback = "changed" if changed == "feedback" else None
+    batch_size = 3 if changed == "batch_size" else 2
+    if changed:
+        with pytest.raises(ValueError, match="increment --iteration"):
+            classify_manifest(
+                manifest_path, backend=backend, feedback=feedback, batch_size=batch_size
+            )
+    else:
+        assert classify_manifest(manifest_path, backend=backend, batch_size=2) == outputs
+    assert backend.calls == 0
+    assert outputs[0].read_bytes() == original
+    assert outputs[0].stat().st_mtime_ns == original_mtime
+    if changed:
+        revised = classify_manifest(
+            manifest_path, backend=backend, feedback=feedback, batch_size=batch_size, iteration=2
+        )
+        assert revised != outputs
+        assert backend.calls > 0
+        assert outputs[0].read_bytes() == original

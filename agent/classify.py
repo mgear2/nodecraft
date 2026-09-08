@@ -714,9 +714,20 @@ def classify_manifest(
                 and existing.get("iteration") == iteration
             ):
                 existing_output = chunk_root / existing["path"]
-                if existing_output.exists() and trace.hash_json_artifact(
-                    validate_file(existing_output, "classification")
-                ) == existing.get("content_hash"):
+                completed = validate_file(existing_output, "classification")
+                if (
+                    completed.get("provenance", {}).get("classification_context_hash")
+                    != context_hash
+                ):
+                    raise ValueError(
+                        "Completed classification context differs; increment --iteration "
+                        "to classify with a new context"
+                    )
+                if trace.hash_json_artifact(completed) != existing.get("content_hash"):
+                    raise ValueError(
+                        "Completed classification content differs; increment --iteration"
+                    )
+                else:
                     outputs.append(existing_output)
                     partial.unlink(missing_ok=True)
                     status["completed_chunks"] += 1
@@ -755,6 +766,10 @@ def classify_manifest(
                     outputs.append(output)
                     items.update()
                     continue
+
+                raise ValueError(
+                    "Completed classification lineage or context differs; increment --iteration"
+                )
 
             initial_classifications: list[dict] = []
             if partial.exists():
