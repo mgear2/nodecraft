@@ -22,7 +22,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import trace  # noqa: E402
-from lib.metadata import normalize_subtree_path  # noqa: E402
 from lib.validate import validate_file, write_validated  # noqa: E402
 
 
@@ -30,38 +29,32 @@ def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _safe_path(
-    root: Path, value: str, *, scope_path: str = ".", allow_missing: bool = True
-) -> Path:
+def _safe_path(mount: Path, value: str, *, allow_missing: bool = True) -> Path:
+    """Resolve an artifact-relative path inside its explicit mount."""
+
     candidate = Path(value)
     if candidate.is_absolute() or not value or any(part == ".." for part in candidate.parts):
         raise ValueError(f"path must be relative and contained within root: {value!r}")
-    resolved_root = root.resolve()
-    scope = normalize_subtree_path(scope_path)
-    scope_root = (root / scope if scope != "." else root).resolve()
-    resolved = (scope_root / candidate).resolve(strict=not allow_missing)
-    if resolved != scope_root and scope_root not in resolved.parents:
-        raise ValueError(f"path escapes selected scope: {value!r}")
-    if resolved != resolved_root and resolved_root not in resolved.parents:
-        raise ValueError(f"path escapes root: {value!r}")
-    return scope_root / candidate
+    mount_root = mount.resolve()
+    resolved = (mount_root / candidate).resolve(strict=not allow_missing)
+    if resolved != mount_root and mount_root not in resolved.parents:
+        raise ValueError(f"path escapes artifact mount: {value!r}")
+    return mount_root / candidate
 
 
-def _validate_change(root: Path, change: dict, *, scope_path: str = ".") -> None:
-    _safe_path(root, change["from_path"], scope_path=scope_path, allow_missing=True)
+def _validate_change(mount: Path, change: dict) -> None:
+    _safe_path(mount, change["from_path"], allow_missing=True)
     if change["action"] in ("move", "rename") and not change.get("to_path"):
         raise ValueError(f"{change['action']} requires a to_path")
     if change.get("to_path"):
-        _safe_path(root, change["to_path"], scope_path=scope_path, allow_missing=True)
+        _safe_path(mount, change["to_path"], allow_missing=True)
 
 
 def execute_operation(
-    root: Path,
+    mount: Path,
     change: dict,
     trash_dir: Path,
     permanent_delete: bool,
-    *,
-    scope_path: str = ".",
 ) -> dict:
     action = change["action"]
     op = {
@@ -77,30 +70,28 @@ def execute_operation(
         op["chunk_id"] = provenance[0]["chunk_id"]
 
     try:
-        _validate_change(root, change, scope_path=scope_path)
-        from_abs = _safe_path(root, change["from_path"], scope_path=scope_path)
+        _validate_change(mount, change)
+        from_abs = _safe_path(mount, change["from_path"])
         if not from_abs.exists() and not from_abs.is_symlink():
             op["status"] = "skipped"
             op["error"] = "source path no longer exists"
             return op
 
         if action in ("move", "rename"):
-            to_abs = _safe_path(root, change["to_path"], scope_path=scope_path)
+            to_abs = _safe_path(mount, change["to_path"])
             _ensure_parent(to_abs)
             shutil.move(str(from_abs), str(to_abs))
 
         elif action == "archive":
             to_abs = (
-                _safe_path(root, change["to_path"], scope_path=scope_path)
+                _safe_path(mount, change["to_path"])
                 if change.get("to_path")
                 else trash_dir / change["from_path"]
             )
             _ensure_parent(to_abs)
             shutil.move(str(from_abs), str(to_abs))
             op["to_path"] = (
-                str(to_abs.relative_to(root / scope_path))
-                if to_abs.is_relative_to(root / scope_path)
-                else str(to_abs)
+                str(to_abs.relative_to(mount)) if to_abs.is_relative_to(mount) else str(to_abs)
             )
 
         elif action == "delete":
@@ -114,7 +105,7 @@ def execute_operation(
                 to_abs = trash_dir / change["from_path"]
                 _ensure_parent(to_abs)
                 shutil.move(str(from_abs), str(to_abs))
-                op["to_path"] = str(to_abs.relative_to(root / scope_path))
+                op["to_path"] = str(to_abs.relative_to(mount))
 
     except (OSError, ValueError, TypeError) as e:
         op["status"] = "failed"
@@ -123,7 +114,7 @@ def execute_operation(
     return op
 
 
-def generate_undo_script(operations: list[dict], root: Path, scope_path: str = ".") -> str:
+def generate_undo_script(operations: list[dict], mount: Path) -> str:
     """Best-effort inverse: moves/renames/archives are reversible by moving
     back; permanent deletes are not reversible and are called out."""
     undo_operations = [
@@ -131,8 +122,10 @@ def generate_undo_script(operations: list[dict], root: Path, scope_path: str = "
         for op in reversed(operations)
         if op["status"] == "success"
         and (
-            op["action"] in ("move", "rename", "archive") and op.get("to_path")
-            or op["action"] == "delete" and op.get("to_path")
+            op["action"] in ("move", "rename", "archive")
+            and op.get("to_path")
+            or op["action"] == "delete"
+            and op.get("to_path")
         )
     ]
     irreversible = [
@@ -147,8 +140,7 @@ import shutil
 import json
 from pathlib import Path
 
-ROOT = Path({str(root)!r})
-SCOPE_PATH = {normalize_subtree_path(scope_path)!r}
+MOUNT = Path({str(mount)!r})
 OPERATIONS = json.loads({json.dumps(json.dumps(undo_operations))})
 IRREVERSIBLE = json.loads({json.dumps(json.dumps(irreversible))})
 
@@ -157,11 +149,11 @@ def resolve(path: str) -> Path:
     candidate = Path(path)
     if candidate.is_absolute() or not path or any(part == ".." for part in candidate.parts):
         raise ValueError(f"undo path is not relative: {{path!r}}")
-    scope_root = ROOT if SCOPE_PATH == "." else ROOT / SCOPE_PATH
-    resolved = (scope_root / candidate).resolve()
-    if resolved != scope_root and scope_root not in resolved.parents:
-        raise ValueError(f"undo path escapes selected scope: {{path!r}}")
-    return scope_root / candidate
+    mount_root = MOUNT.resolve()
+    resolved = (mount_root / candidate).resolve()
+    if resolved != mount_root and mount_root not in resolved.parents:
+        raise ValueError(f"undo path escapes artifact mount: {{path!r}}")
+    return mount_root / candidate
 
 
 for operation in OPERATIONS:
@@ -176,7 +168,7 @@ for path in IRREVERSIBLE:
 
 
 def execute_proposal(
-    root_path: str,
+    mount_path: str,
     proposal: dict,
     approval: dict,
     permanent_delete: bool = False,
@@ -195,15 +187,16 @@ def execute_proposal(
             "does not match the proposal"
         )
 
-    root = Path(root_path).resolve()
-    scope_path = normalize_subtree_path(proposal.get("scope", {}).get("subtree_path", "."))
-    scope_root = root if scope_path == "." else root / scope_path
-    trash_dir = scope_root / ".trash" / proposal["run_id"]
+    # ``mount_path`` is explicit authority to execute.  Proposal scope and
+    # origin are provenance only; they must never redirect filesystem writes.
+    mount = Path(mount_path).resolve()
+    if not mount.is_dir():
+        raise ValueError(f"artifact mount must be an existing directory: {mount}")
+    trash_dir = mount / ".trash" / proposal["run_id"]
     for change in proposal["changes"]:
-        _validate_change(root, change, scope_path=scope_path)
+        _validate_change(mount, change)
     source_paths = {
-        _safe_path(root, change["from_path"], scope_path=scope_path).resolve()
-        for change in proposal["changes"]
+        _safe_path(mount, change["from_path"]).resolve() for change in proposal["changes"]
     }
     seen_destinations: set[str] = set()
     for change in proposal["changes"]:
@@ -214,9 +207,9 @@ def execute_proposal(
             and change["action"] in ("archive", "delete")
         ):
             destination_path = trash_dir / change["from_path"]
-            destination = str(destination_path.relative_to(scope_root))
+            destination = str(destination_path.relative_to(mount))
         if destination:
-            resolved = _safe_path(root, destination, scope_path=scope_path).resolve()
+            resolved = _safe_path(mount, destination).resolve()
             key = str(resolved).casefold()
             if key in seen_destinations:
                 raise ValueError(f"duplicate operation destination: {destination!r}")
@@ -228,9 +221,7 @@ def execute_proposal(
     started = trace.now_iso()
 
     operations = [
-        execute_operation(
-            root, change, trash_dir, permanent_delete, scope_path=scope_path
-        )
+        execute_operation(mount, change, trash_dir, permanent_delete)
         for change in proposal["changes"]
     ]
 
@@ -245,13 +236,16 @@ def execute_proposal(
     }
     if "scope" in proposal:
         log["scope"] = proposal["scope"]
-    undo_script = generate_undo_script(operations, root, scope_path)
+    if "origin" in proposal:
+        log["origin"] = proposal["origin"]
+    log["mount_path"] = str(mount)
+    undo_script = generate_undo_script(operations, mount)
     return log, undo_script
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="I9/T6: execute an approved proposal")
-    parser.add_argument("root_path")
+    parser.add_argument("mount_path", help="filesystem directory mounted at this artifact's root")
     parser.add_argument("proposal_path")
     parser.add_argument("approval_decision_path")
     parser.add_argument("--out", default=None, help="execution_log.json output path")
@@ -273,7 +267,7 @@ def main() -> None:
             print(f"  {c['action']}: {c['from_path']} -> {c.get('to_path')}")
         return
 
-    log, undo_script = execute_proposal(args.root_path, proposal, approval, args.permanent_delete)
+    log, undo_script = execute_proposal(args.mount_path, proposal, approval, args.permanent_delete)
 
     out_path = args.out or f"runs/{proposal['run_id']}/execution_log.json"
     undo_path = args.undo_out or f"runs/{proposal['run_id']}/undo.py"

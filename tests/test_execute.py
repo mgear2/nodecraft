@@ -180,7 +180,7 @@ def test_undo_script_actually_reverses_move(tmp_path):
     assert not (tmp_path / "src" / "keep.py").exists()
 
 
-def test_scoped_execute_contains_trash_and_undo(tmp_path):
+def test_portable_subtree_executes_at_explicit_mount_and_preserves_origin(tmp_path):
     scoped = tmp_path / "scoped"
     scoped.mkdir()
     (scoped / "old.bak").write_text("hello")
@@ -196,20 +196,41 @@ def test_scoped_execute_contains_trash_and_undo(tmp_path):
             "subtree_path": "scoped",
             "path_format": "posix",
         },
-        "changes": [
-            {"node_id": "n1", "action": "delete", "from_path": "old.bak", "to_path": None}
-        ],
+        "changes": [{"node_id": "n1", "action": "delete", "from_path": "old.bak", "to_path": None}],
     }
     approval = {"proposal_id": "p1", "decision": "approve"}
 
-    log, undo_script = execute_proposal(str(tmp_path), proposal, approval)
+    log, undo_script = execute_proposal(str(scoped), proposal, approval)
 
     assert (scoped / ".trash" / "r1" / "old.bak").exists()
     assert not (tmp_path / ".trash" / "r1").exists()
+    assert log["mount_path"] == str(scoped.resolve())
     undo_path = tmp_path / "undo.py"
     undo_path.write_text(undo_script)
     subprocess.run([sys.executable, str(undo_path)], check=True)
     assert (scoped / "old.bak").exists()
+
+
+def test_execute_does_not_treat_origin_as_a_filesystem_target(tmp_path):
+    mount = tmp_path / "mount"
+    mount.mkdir()
+    (mount / "old.bak").write_text("hello")
+    proposal = {
+        "schema_version": "1.0",
+        "proposal_id": "p1",
+        "run_id": "r1",
+        "iteration": 1,
+        "based_on_input_hash": "x",
+        "diagram": "n/a",
+        "scope": {"root_path": "C:/source", "subtree_path": "src", "path_format": "posix"},
+        "origin": {"root_path": "C:/source", "subtree_path": "src", "path_format": "posix"},
+        "changes": [{"node_id": "n1", "action": "delete", "from_path": "old.bak", "to_path": None}],
+    }
+
+    execute_proposal(str(mount), proposal, {"proposal_id": "p1", "decision": "approve"})
+
+    assert not (mount / "old.bak").exists()
+    assert (mount / ".trash" / "r1" / "old.bak").exists()
 
 
 def test_execute_rejects_duplicate_destinations(tmp_path):

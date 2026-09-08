@@ -70,10 +70,41 @@ def test_reconciliation_rejects_incompatible_overlapping_sources(tmp_path):
     manifest = _manifest(
         tmp_path,
         ["folder/file.txt"],
-        lambda path: (
-            ("delete", None) if path == "folder" else ("move", "elsewhere/file.txt")
-        ),
+        lambda path: ("delete", None) if path == "folder" else ("move", "elsewhere/file.txt"),
     )
 
     with pytest.raises(ValueError, match="overlapping source paths"):
         render_manifest_proposal(manifest)
+
+
+def test_subtree_proposal_rejects_target_outside_local_scope(tmp_path):
+    manifest = _manifest(
+        tmp_path,
+        ["src/old.bak"],
+        lambda path: ("move", "archive/" + path),
+    )
+
+    with pytest.raises(ValueError, match="outside selected scope"):
+        render_manifest_proposal(manifest, subtree_path="src")
+
+
+def test_subtree_proposal_localizes_target_inside_scope(tmp_path):
+    manifest = _manifest(
+        tmp_path,
+        ["src/old.bak"],
+        lambda path: (
+            ("move", "src/archive/old.bak") if path == "src/old.bak" else ("keep", None)
+        ),
+    )
+
+    proposal = render_manifest_proposal(manifest, subtree_path="src")
+
+    assert proposal["changes"][0]["from_path"] == "old.bak"
+    assert proposal["changes"][0]["to_path"] == "archive/old.bak"
+
+
+def test_subtree_proposal_rejects_missing_scope(tmp_path):
+    manifest = _manifest(tmp_path, ["src/file.txt"], lambda path: ("keep", None))
+
+    with pytest.raises(ValueError, match="subtree path not found"):
+        render_manifest_proposal(manifest, subtree_path="missing")

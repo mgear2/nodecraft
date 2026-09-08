@@ -71,6 +71,10 @@ def build_manifest(log: dict) -> dict:
         manifest["chunks"] = chunk_status
     if "scope" in log:
         manifest["scope"] = log["scope"]
+    if "origin" in log:
+        manifest["origin"] = log["origin"]
+    if "mount_path" in log:
+        manifest["mount_path"] = log["mount_path"]
     return manifest
 
 

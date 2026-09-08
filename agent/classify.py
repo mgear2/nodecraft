@@ -17,7 +17,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -27,6 +27,77 @@ from lib.validate import validate_file, write_validated  # noqa: E402
 
 VALID_CATEGORIES = {"source", "config", "docs", "cache", "duplicate", "build_artifact", "unknown"}
 VALID_ACTIONS = {"keep", "move", "rename", "delete", "archive", "review"}
+
+# Common near-miss values produced by small local models (qwen, llama, etc.)
+# mapped to the schema-valid enums.  Kept at module level so both LLMBackend
+# and OllamaBackend can normalize responses before shape validation.
+CATEGORY_ALIASES = {
+    "source_code": "source",
+    "sourcecode": "source",
+    "code": "source",
+    "config_file": "config",
+    "configuration": "config",
+    "documentation": "docs",
+    "doc": "docs",
+    "readme": "docs",
+    "cache_file": "cache",
+    "cached": "cache",
+    "build": "build_artifact",
+    "build_output": "build_artifact",
+    "build_artifact": "build_artifact",
+    "duplicate_file": "duplicate",
+    "duplicated": "duplicate",
+    "other": "unknown",
+    "misc": "unknown",
+}
+ACTION_ALIASES = {
+    "retain": "keep",
+    "preserve": "keep",
+    "move_to": "move",
+    "relocate": "move",
+    "delete_file": "delete",
+    "remove": "delete",
+    "archive_file": "archive",
+    "flag": "review",
+    "inspect": "review",
+}
+
+
+def _extract_json(text: str) -> str:
+    """Extract a JSON object from a model response.
+
+    Small local models frequently wrap JSON in markdown code fences or
+    prepend/append prose.  This finds the first '{' and the last '}' and
+    returns the substring between them.
+    """
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError(f"no JSON object found in response: {text[:200]!r}")
+    return text[start : end + 1]
+
+
+def _normalize(data: Any) -> dict:
+    """Normalize common near-miss values from small local models."""
+    if not isinstance(data, dict):
+        raise ValueError("classifier response must be a JSON object")
+    category = data.get("category")
+    if isinstance(category, str):
+        normalized = CATEGORY_ALIASES.get(category.strip().lower())
+        if normalized:
+            data["category"] = normalized
+    action = data.get("recommended_action")
+    if isinstance(action, str):
+        normalized = ACTION_ALIASES.get(action.strip().lower())
+        if normalized:
+            data["recommended_action"] = normalized
+    confidence = data.get("confidence")
+    if isinstance(confidence, str):
+        try:
+            data["confidence"] = float(confidence)
+        except ValueError:
+            pass
+    return data
 
 
 class ClassifierBackend(Protocol):
@@ -191,7 +262,8 @@ class LLMBackend:
             )
             text = "".join(b.text for b in resp.content if b.type == "text")
             try:
-                data = json.loads(text)
+                data = json.loads(_extract_json(text))
+                _normalize(data)
                 _validate_shape(data)
                 return data
             except (json.JSONDecodeError, ValueError) as e:
@@ -258,7 +330,8 @@ class OllamaBackend:
             with urlopen(request, timeout=self.timeout) as response:
                 response_data = json.loads(response.read().decode("utf-8"))
             try:
-                data = json.loads(response_data["response"])
+                data = json.loads(_extract_json(response_data["response"]))
+                _normalize(data)
                 _validate_shape(data)
                 return data
             except (KeyError, json.JSONDecodeError, TypeError, ValueError) as error:
@@ -284,13 +357,24 @@ def build_backend(
     raise ValueError(f"unknown classifier backend: {name}")
 
 
-def _validate_shape(data: dict) -> None:
+def _validate_shape(data: Any) -> None:
+    if not isinstance(data, dict):
+        raise ValueError("classifier response must be a JSON object")
+    if not isinstance(data.get("purpose"), str):
+        raise ValueError("purpose must be a string")
     if data.get("category") not in VALID_CATEGORIES:
         raise ValueError(f"invalid category: {data.get('category')}")
     if data.get("recommended_action") not in VALID_ACTIONS:
         raise ValueError(f"invalid recommended_action: {data.get('recommended_action')}")
-    if not isinstance(data.get("confidence"), (int, float)):
+    confidence = data.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
         raise ValueError("confidence must be numeric")
+    if not 0 <= confidence <= 1:
+        raise ValueError("confidence must be between 0 and 1")
+    if data.get("target_path") is not None and not isinstance(data.get("target_path"), str):
+        raise ValueError("target_path must be a string or null")
+    if not isinstance(data.get("rationale"), str):
+        raise ValueError("rationale must be a string")
 
 
 def classify_all(
@@ -320,6 +404,8 @@ def classify_all(
     }
     if "scope" in snapshot:
         result["scope"] = snapshot["scope"]
+    if "origin" in snapshot:
+        result["origin"] = snapshot["origin"]
     result["provenance"] = {
         "source_artifacts": [
             {
@@ -470,7 +556,10 @@ def main() -> None:
     snapshot = validate_file(args.snapshot_path, "tree_snapshot")
     backend = build_backend(args.backend, model=args.model, ollama_url=args.ollama_url)
     result = classify_all(
-        snapshot, backend, feedback=args.feedback, iteration=args.iteration,
+        snapshot,
+        backend,
+        feedback=args.feedback,
+        iteration=args.iteration,
         progress=Progress(args.quiet),
     )
 

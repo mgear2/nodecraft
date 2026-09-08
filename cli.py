@@ -22,7 +22,7 @@ def main() -> None:
         print(
             "Usage: filetree "
             "<run|scan|classify|classify-chunks|render|approve|execute|"
-            "summarize|summarize-subtree> [args...]"
+            "summarize|derive-subtree|summarize-subtree> [args...]"
         )
         sys.exit(1)
 
@@ -74,10 +74,10 @@ def main() -> None:
         import scripts.summarize as summarize
 
         summarize.main()
-    elif command == "summarize-subtree":
-        import scripts.summarize_subtree as summarize_subtree
+    elif command in {"derive-subtree", "summarize-subtree"}:
+        import scripts.derive_subtree as derive_subtree
 
-        summarize_subtree.main()
+        derive_subtree.main()
     else:
         print(f"Unknown command: {command}")
         sys.exit(1)

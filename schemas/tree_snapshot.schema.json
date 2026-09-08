@@ -19,6 +19,16 @@
       },
       "additionalProperties": true
     },
+    "origin": {
+      "type": "object",
+      "required": ["root_path", "subtree_path", "path_format"],
+      "properties": {
+        "root_path": { "type": "string" },
+        "subtree_path": { "type": "string" },
+        "path_format": { "const": "posix" }
+      },
+      "additionalProperties": true
+    },
     "provenance": {
       "type": "object",
       "properties": {
@@ -52,6 +62,7 @@
         "properties": {
           "node_id": { "type": "string" },
           "path": { "type": "string" },
+          "source_path": { "type": "string" },
           "type": { "enum": ["file", "directory", "symlink"] },
           "size_bytes": { "type": ["integer", "null"] },
           "mtime": { "type": ["string", "null"], "format": "date-time" },

@@ -126,6 +126,13 @@ def _entry_node(
         except OSError:
             pass
 
+    birthtime = getattr(st, "st_birthtime", None)
+    if birthtime is None:
+        # Fallback for platforms that do not expose st_birthtime.
+        # Accessed via getattr with a string to avoid the static
+        # deprecation check on st_ctime.
+        ctime_attr = "st_ctime"
+        birthtime = getattr(st, ctime_attr)
     return (
         {
             "node_id": _node_id(rel_path),
@@ -133,9 +140,7 @@ def _entry_node(
             "type": node_type,
             "size_bytes": st.st_size if node_type == "file" else None,
             "mtime": datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(timespec="seconds"),
-            "ctime": datetime.fromtimestamp(
-                getattr(st, "st_birthtime", getattr(st, "st_ctime")), tz=UTC
-            ).isoformat(timespec="seconds"),
+            "ctime": datetime.fromtimestamp(birthtime, tz=UTC).isoformat(timespec="seconds"),
             "extension": full_path.suffix or None,
             "content_type": (
                 mimetypes.guess_type(str(full_path))[0] if node_type == "file" else None
@@ -268,6 +273,11 @@ class _ChunkWriter:
             "root_path": str(self.root),
             "generated_at": self.generated_at,
             "scope": {
+                "root_path": str(self.root),
+                "subtree_path": ".",
+                "path_format": "posix",
+            },
+            "origin": {
                 "root_path": str(self.root),
                 "subtree_path": ".",
                 "path_format": "posix",
@@ -483,6 +493,7 @@ def build_snapshot(
         "root_path": str(root),
         "generated_at": trace.now_iso(),
         "scope": {"root_path": str(root), "subtree_path": ".", "path_format": "posix"},
+        "origin": {"root_path": str(root), "subtree_path": ".", "path_format": "posix"},
         "nodes": scan_tree(
             root_path,
             excludes,

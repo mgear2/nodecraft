@@ -18,7 +18,13 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import trace  # noqa: E402
-from lib.metadata import validate_snapshot_classification_lineage  # noqa: E402
+from lib.metadata import (
+    build_scope,
+    localize_path,
+    normalize_subtree_path,
+    path_in_subtree,
+    validate_snapshot_classification_lineage,
+)  # noqa: E402
 from lib.validate import validate, validate_file, write_validated  # noqa: E402
 
 ACTIONABLE = {"move", "rename", "delete", "archive"}
@@ -159,6 +165,7 @@ def render_proposal(snapshot: dict, classification: dict, iteration: int | None 
     }
     if "scope" in snapshot:
         result["scope"] = snapshot["scope"]
+        result["origin"] = snapshot.get("origin", snapshot["scope"])
     result["provenance"] = {
         "source_artifacts": [
             {
@@ -190,14 +197,11 @@ def render_manifest_proposal(
     manifest = validate_file(manifest_file, "chunk_manifest")
     if manifest.get("status", {}).get("classification") != "completed":
         raise ValueError("manifest classification is not complete")
-    requested = subtree_path.strip("/").replace("\\", "/") or "."
-    if requested == ".":
-        scope_path = "."
-    else:
-        scope_path = requested
+    scope_path = normalize_subtree_path(subtree_path)
     lines: list[tuple[str, str]] = []
     changes: list[dict[str, Any]] = []
     source_artifacts: list[dict[str, Any]] = []
+    matched_scope = scope_path == "."
     for entry in manifest["chunks"]:
         classification_info = entry.get("classification")
         if not classification_info or classification_info["iteration"] != iteration:
@@ -227,17 +231,14 @@ def render_manifest_proposal(
             "chunk_path": entry["path"],
             "chunk_content_hash": entry["content_hash"],
         }
-        source_artifacts.append(
-            chunk_provenance
-        )
+        source_artifacts.append(chunk_provenance)
         class_by_id = {item["node_id"]: item for item in classification["classifications"]}
         for node in chunk["nodes"]:
             path = node["path"]
-            if scope_path != "." and path != scope_path and not path.startswith(scope_path + "/"):
+            if not path_in_subtree(path, scope_path):
                 continue
-            relative_path = path
-            if scope_path != ".":
-                relative_path = "." if path == scope_path else path[len(scope_path) + 1 :]
+            matched_scope = True
+            relative_path = localize_path(path, scope_path)
             item = class_by_id.get(node["node_id"])
             if item is None:
                 continue
@@ -247,14 +248,19 @@ def render_manifest_proposal(
             action = item["recommended_action"]
             rationale = item["rationale"]
             if action in ACTIONABLE:
-                target = f" -> {item['target_path']}" if item.get("target_path") else ""
+                target_path = (
+                    localize_path(item["target_path"], scope_path)
+                    if item.get("target_path")
+                    else None
+                )
+                target = f" -> {target_path}" if target_path else ""
                 rendered = f"{'  ' * depth}{name}{marker}  # [{action.upper()}{target}] {rationale}"
                 changes.append(
                     {
                         "node_id": item["node_id"],
                         "action": action,
                         "from_path": relative_path,
-                        "to_path": item.get("target_path"),
+                        "to_path": target_path,
                         "provenance": {
                             "source_artifacts": [
                                 {
@@ -269,6 +275,8 @@ def render_manifest_proposal(
                 rendered = f"{'  ' * depth}{name}{marker}  # [{action}] {rationale}"
             lines.append((relative_path, rendered))
     lines.sort(key=lambda item: item[0])
+    if not matched_scope:
+        raise ValueError(f"subtree path not found in manifest: {scope_path}")
     changes.sort(key=lambda item: item["from_path"])
     _reconcile_operations(changes)
     based_on = trace.hash_json_artifact({"source_artifacts": source_artifacts})
@@ -282,12 +290,10 @@ def render_manifest_proposal(
         "changes": changes,
         "provenance": {"source_artifacts": source_artifacts},
     }
-    if scope_path != ".":
-        result["scope"] = {
-            "root_path": manifest["root_path"],
-            "subtree_path": scope_path,
-            "path_format": "posix",
-        }
+    # Paths in this proposal are always relative to the selected artifact
+    # root.  Scope records where that root came from, not where to execute.
+    result["scope"] = build_scope(manifest["root_path"], scope_path)
+    result["origin"] = result["scope"]
     validate(result, "proposal")
     return result
 

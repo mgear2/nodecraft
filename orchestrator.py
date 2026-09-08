@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent.classify import build_backend, classify_manifest  # noqa: E402
 from lib import trace  # noqa: E402
+from lib.metadata import normalize_subtree_path  # noqa: E402
 from lib.progress import Progress  # noqa: E402
 from lib.validate import write_validated  # noqa: E402
 from scripts.execute import execute_proposal  # noqa: E402
@@ -157,9 +158,8 @@ def run_pipeline(
 
     # T6
     progress.stage("executing approved changes")
-    log, undo_script = execute_proposal(
-        str(Path(root_path).resolve()), proposal, approval, permanent_delete
-    )
+    mount_path = Path(root_path).resolve() / normalize_subtree_path(subtree_path)
+    log, undo_script = execute_proposal(str(mount_path), proposal, approval, permanent_delete)
     undo_path = rdir / "undo.py"
     undo_path.write_text(undo_script)
     undo_path.chmod(0o755)

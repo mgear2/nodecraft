@@ -74,14 +74,22 @@ selected root; absolute paths, parent traversal, and symlink escapes are
 rejected. The scanner uses a portable creation-time fallback on platforms that
 do not expose `st_birthtime`.
 
-Snapshots and downstream artifacts carry optional `scope` and `provenance`
-metadata. `summarize-subtree` accepts a normalized POSIX relative path,
-includes exactly that node and its descendants as a canonical tree rooted at
-`.`, composes scopes when its input is already scoped, and never changes the
-source artifacts. Derived output names include a scope hash and refuse source,
-duplicate, or existing output paths. Use `--dry-run` to inspect the report
-without writing the derived snapshot, classification, or report. A missing
-subtree path is an error.
+Trees and subtrees use the same `tree_snapshot` artifact. A derived subtree is
+portable: its node `path` values are relative to its local root (`.`), while
+`source_path`, `origin`, `scope`, and provenance retain its source-tree
+location and stable node IDs. Use `derive-subtree` (the older
+`summarize-subtree` command remains an alias) with a normalized POSIX relative
+path to create the derived snapshot, filtered classification, and report. It
+includes exactly that node and its descendants, composes nested scopes, and
+never changes source artifacts. Derived output names include a scope hash and
+refuse source, duplicate, or existing output paths. Use `--dry-run` to inspect
+the report without writing artifacts. A missing subtree path is an error.
+
+Proposal operation paths are always local to their artifact. Source scope is
+provenance, not execution authority: `execute MOUNT_PATH ...` applies a
+portable proposal only beneath the explicit mount path supplied by the
+operator. The pipeline mounts `--subtree` at `ROOT_PATH/SUBTREE_PATH`
+automatically.
 
 `scan` writes a bounded-memory depth-first stream of schema-valid tree chunks
 to `runs/<run_id>/chunks/manifest.json` and the adjacent chunk files. Each

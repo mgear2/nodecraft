@@ -14,9 +14,7 @@ def test_conditional_hashing_skips_large_files(tmp_path):
     small.write_text("small")
     large.write_bytes(b"x" * 10)
 
-    snapshot = build_snapshot(
-        str(tmp_path), "r1", hash_mode="conditional", max_hash_size=4
-    )
+    snapshot = build_snapshot(str(tmp_path), "r1", hash_mode="conditional", max_hash_size=4)
     nodes = {node["path"]: node for node in snapshot["nodes"]}
     assert nodes["small.txt"]["content_hash"] is None
     assert nodes["large.bin"]["content_hash"] is None

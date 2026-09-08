@@ -6,7 +6,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib import trace  # noqa: E402
-from scripts.summarize_subtree import (  # noqa: E402
+from scripts.derive_subtree import (  # noqa: E402
     build_subtree_classification,
     build_subtree_snapshot,
 )
@@ -55,6 +55,8 @@ def test_subtree_is_rebased_and_composes_scope():
 
     assert derived["scope"]["subtree_path"] == "src"
     assert [node["path"] for node in derived["nodes"]] == [".", "main.py"]
+    assert [node["source_path"] for node in derived["nodes"]] == ["src", "src/main.py"]
+    assert derived["origin"] == derived["scope"]
     assert build_subtree_classification(classification, derived)["input_hash"] == (
         trace.hash_json_artifact(derived)
     )
@@ -62,6 +64,7 @@ def test_subtree_is_rebased_and_composes_scope():
     nested = build_subtree_snapshot(derived, "main.py")
     assert nested["scope"]["subtree_path"] == "src/main.py"
     assert nested["nodes"][0]["path"] == "."
+    assert nested["nodes"][0]["source_path"] == "src/main.py"
 
 
 def test_subtree_rejects_lineage_mismatch():

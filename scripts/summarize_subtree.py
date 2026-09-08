@@ -37,9 +37,7 @@ def _select_nodes(snapshot: dict[str, Any], subtree_path: str) -> list[dict[str,
     if subtree != "." and subtree not in paths:
         raise ValueError(f"subtree path not found in snapshot: {subtree}")
     return [
-        {**node, "path": path}
-        for node, path in canonical_nodes
-        if path_in_subtree(path, subtree)
+        {**node, "path": path} for node, path in canonical_nodes if path_in_subtree(path, subtree)
     ]
 
 
@@ -71,7 +69,11 @@ def build_subtree_snapshot(
             relative_path = "."
         else:
             relative_path = path[len(selection_subtree) + 1 :]
-        rebased.append({**node, "path": relative_path})
+        # ``path`` is local to the portable artifact.  Preserve a stable
+        # source location independently so nested derivations and importers
+        # never need to infer identity from a rebased path.
+        source_path = node.get("source_path") or compose_subtree_path(source_scope, path)
+        rebased.append({**node, "path": relative_path, "source_path": source_path})
     source_hash = trace.hash_json_artifact(snapshot)
     composed_scope = compose_subtree_path(source_scope, requested)
     result = {
@@ -80,10 +82,9 @@ def build_subtree_snapshot(
         "root_path": snapshot["root_path"],
         "generated_at": trace.now_iso(),
         "scope": build_scope(snapshot["root_path"], composed_scope),
+        "origin": build_scope(snapshot["root_path"], composed_scope),
         "provenance": {
-            "source_scope": snapshot.get(
-                "scope", build_scope(snapshot["root_path"], ".")
-            ),
+            "source_scope": snapshot.get("scope", build_scope(snapshot["root_path"], ".")),
             "source_artifacts": [
                 {
                     "artifact_type": "tree_snapshot",
@@ -91,7 +92,7 @@ def build_subtree_snapshot(
                     "content_hash": source_hash,
                     **({"path": source_artifact} if source_artifact else {}),
                 }
-            ]
+            ],
         },
         "nodes": rebased,
     }
@@ -129,6 +130,7 @@ def build_subtree_classification(
         "input_hash": trace.hash_json_artifact(subtree_snapshot),
         "iteration": classification.get("iteration", 1),
         "scope": subtree_snapshot["scope"],
+        "origin": subtree_snapshot.get("origin", subtree_snapshot["scope"]),
         "provenance": {
             "source_artifacts": [
                 {
@@ -166,6 +168,7 @@ def build_subtree_report(
         "report_type": "subtree",
         "run_id": snapshot["run_id"],
         "scope": snapshot["scope"],
+        "origin": snapshot.get("origin", snapshot["scope"]),
         "provenance": {
             "source_artifacts": [
                 {
@@ -242,8 +245,8 @@ def main() -> None:
     classification_out = args.classification_out or str(
         run_dir / f"classification.subtree-{suffix}.json"
     )
-    report_out = args.report_out or args.out or str(
-        run_dir / f"subtree_report.subtree-{suffix}.json"
+    report_out = (
+        args.report_out or args.out or str(run_dir / f"subtree_report.subtree-{suffix}.json")
     )
 
     output_paths = [Path(snapshot_out), Path(classification_out), Path(report_out)]

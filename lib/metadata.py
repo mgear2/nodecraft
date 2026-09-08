@@ -65,6 +65,24 @@ def relative_to_scope(path: str, scope_path: str) -> str:
     return normalized
 
 
+def localize_path(path: str, scope_path: str) -> str:
+    """Convert a source-relative path into an artifact-local path.
+
+    Unlike :func:`relative_to_scope`, this rejects paths outside the selected
+    scope instead of returning them unchanged.  That distinction matters for
+    proposal targets: silently retaining an outside path would make a
+    portable subtree proposal ambiguous.
+    """
+
+    normalized = normalize_subtree_path(path)
+    scope = normalize_subtree_path(scope_path)
+    if scope == ".":
+        return normalized
+    if normalized != scope and not normalized.startswith(scope + "/"):
+        raise ValueError(f"path is outside selected scope: {path!r}")
+    return relative_to_scope(normalized, scope)
+
+
 def scope_equal(left: dict[str, Any] | None, right: dict[str, Any] | None) -> bool:
     """Compare scopes using canonical paths and roots."""
 
@@ -104,6 +122,13 @@ def path_in_subtree(path: str, subtree_path: str) -> bool:
 
 
 def build_scope(root_path: str, subtree_path: str = ".") -> dict[str, str]:
+    """Describe an artifact's source location.
+
+    ``root_path`` and ``subtree_path`` are provenance.  They are deliberately
+    not an execution target: a consumer must explicitly mount an artifact
+    before applying its artifact-relative paths to a filesystem.
+    """
+
     return {
         "root_path": str(root_path),
         "subtree_path": normalize_subtree_path(subtree_path),
