@@ -89,7 +89,8 @@ Proposal operation paths are always local to their artifact. Source scope is
 provenance, not execution authority: `execute MOUNT_PATH ...` applies a
 portable proposal only beneath the explicit mount path supplied by the
 operator. The pipeline mounts `--subtree` at `ROOT_PATH/SUBTREE_PATH`
-automatically.
+automatically. All execution destinations, including implicit `.trash/<run_id>/`
+paths, must resolve inside that mount.
 
 `scan` writes a bounded-memory depth-first stream of schema-valid tree chunks
 to `runs/<run_id>/chunks/manifest.json` and the adjacent chunk files. Each
@@ -105,10 +106,14 @@ orchestrator uses this same path; it never reassembles a giant snapshot.
 Model-backed classifiers process nodes in configurable batches (`--batch-size`,
 default 32) and still emit one validated classification per node. This avoids
 one model request per node while preserving node-level lineage and output.
+Completed chunk classifications are immutable: the same context reuses the
+artifact; changes to backend, model, endpoint, feedback, or batch size require
+incrementing `--iteration`. Incompatible completed artifacts are never overwritten.
 
 The rendered proposal is global even though its inputs are chunked: reconciliation
 rejects conflicting destinations and overlapping source paths before approval.
-Approval artifacts bind to the exact proposal content hash and change count.
+Approval artifacts require `proposal_content_hash`; execution rejects missing or
+stale hashes. Approval capture also records the change count.
 Execution preserves each operation's originating chunk ID, and the final summary
 includes per-chunk operation status counts.
 
@@ -174,7 +179,8 @@ for the detailed repository mapping.
   `schemas/*.schema.json` before being written (`lib/validate.py`) — a
   script refuses to produce invalid output rather than passing it downstream.
 - **Reversibility.** `execute.py` archives deletes into `.trash/<run_id>/`
-  by default (pass `--permanent-delete` to skip that) and always emits an
+  by default (`--permanent-delete` applies only to deletes; archives stay
+  reversible) and always emits an
   `undo.py` script that can reverse moves/renames/archives on Windows, macOS,
   and Linux.
 - **Append-only revision history.** The T4→T5→T3 rejection loop is modeled
