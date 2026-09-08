@@ -30,6 +30,30 @@ VALID_CATEGORIES = {"source", "config", "docs", "cache", "duplicate", "build_art
 VALID_ACTIONS = {"keep", "move", "rename", "delete", "archive", "review"}
 DEFAULT_BATCH_SIZE = 32
 MAX_BATCH_SIZE = 128
+OLLAMA_BATCH_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": [
+            "node_id",
+            "purpose",
+            "category",
+            "recommended_action",
+            "target_path",
+            "confidence",
+            "rationale",
+        ],
+        "properties": {
+            "node_id": {"type": "string"},
+            "purpose": {"type": "string"},
+            "category": {"type": "string", "enum": sorted(VALID_CATEGORIES)},
+            "recommended_action": {"type": "string", "enum": sorted(VALID_ACTIONS)},
+            "target_path": {"type": ["string", "null"]},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "rationale": {"type": "string"},
+        },
+    },
+}
 
 # Common near-miss values produced by small local models (qwen, llama, etc.)
 # mapped to the schema-valid enums.  Kept at module level so both LLMBackend
@@ -409,7 +433,7 @@ class OllamaBackend:
                     "model": self.model,
                     "prompt": prompt,
                     "stream": False,
-                    "format": "json",
+                    "format": OLLAMA_BATCH_SCHEMA,
                     "options": {"num_predict": max(1200, len(nodes) * 160)},
                 }
             ).encode("utf-8")
@@ -423,6 +447,7 @@ class OllamaBackend:
                 with urlopen(request, timeout=self.timeout) as response:
                     response_data = json.loads(response.read().decode("utf-8"))
                 data = json.loads(_extract_json(response_data["response"]))
+                data = _coerce_ollama_batch(data, nodes)
                 return _validate_batch_shape(data, nodes)
             except (KeyError, json.JSONDecodeError, TypeError, ValueError, OSError) as error:
                 last_error = error
@@ -491,6 +516,16 @@ def _validate_batch_shape(data: Any, nodes: list[dict]) -> list[dict]:
     if missing:
         raise ValueError(f"batch response is missing node_ids: {sorted(missing)!r}")
     return [by_id[node_id] for node_id in expected_ids]
+
+
+def _coerce_ollama_batch(data: Any, nodes: list[dict]) -> Any:
+    """Accept a singleton object from models that ignore array formatting."""
+
+    if isinstance(data, dict) and len(nodes) == 1:
+        data = dict(data)
+        data.setdefault("node_id", nodes[0]["node_id"])
+        return [data]
+    return data
 
 
 def _classify_batch(

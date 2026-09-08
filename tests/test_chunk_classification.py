@@ -178,6 +178,33 @@ def test_ollama_backend_parses_node_keyed_batch(monkeypatch):
     assert [item["node_id"] for item in result] == ["n1", "n2"]
 
 
+def test_ollama_backend_coerces_singleton_object_response(monkeypatch):
+    node = {"node_id": "n1", "path": "README.md", "type": "file"}
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            item = {
+                "purpose": "documentation",
+                "category": "docs",
+                "recommended_action": "keep",
+                "target_path": None,
+                "confidence": 0.9,
+                "rationale": "markdown file",
+            }
+            return json.dumps({"response": json.dumps(item)}).encode()
+
+    monkeypatch.setattr("agent.classify.urlopen", lambda request, timeout: _Response())
+    result = OllamaBackend().classify_nodes([node], [node])
+    assert result[0]["node_id"] == "n1"
+    assert result[0]["category"] == "docs"
+
+
 def test_ollama_backend_retries_transport_errors(monkeypatch):
     node = {"node_id": "n1", "path": "README.md", "type": "file"}
     calls = 0
