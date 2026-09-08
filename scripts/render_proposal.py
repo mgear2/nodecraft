@@ -313,19 +313,29 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="I6/T3: render a proposal from snapshot + classification"
     )
-    parser.add_argument("snapshot_path")
-    parser.add_argument("classification_path")
+    parser.add_argument("snapshot_path", help="snapshot path or chunk manifest path")
+    parser.add_argument("classification_path", nargs="?", help="classification artifact path")
+    parser.add_argument("--iteration", type=int, default=1)
     parser.add_argument("--out", default=None)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    snapshot = validate_file(args.snapshot_path, "tree_snapshot")
-    classification = validate_file(args.classification_path, "classification")
-    proposal = render_proposal(snapshot, classification)
+    if args.classification_path is None:
+        proposal = render_manifest_proposal(args.snapshot_path, iteration=args.iteration)
+        run_id = proposal["run_id"]
+    else:
+        snapshot = validate_file(args.snapshot_path, "tree_snapshot")
+        classification = validate_file(args.classification_path, "classification")
+        proposal = render_proposal(snapshot, classification, iteration=args.iteration)
+        run_id = snapshot["run_id"]
 
-    out_path = args.out or f"runs/{snapshot['run_id']}/proposal.v{proposal['iteration']}.json"
+    out_path = args.out or f"runs/{run_id}/proposal.v{proposal['iteration']}.json"
 
     if args.dry_run:
+        # Windows consoles may default to cp1252 while diagrams can contain
+        # Unicode tree markers and model-provided text.
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         print(proposal["diagram"])
         print(
             f"\n[dry-run] {len(proposal['changes'])} actionable changes; not written.",
