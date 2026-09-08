@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from agent.classify import build_backend, classify_manifest  # noqa: E402
+from agent.classify import DEFAULT_BATCH_SIZE, build_backend, classify_manifest  # noqa: E402
 from lib import trace  # noqa: E402
 from lib.metadata import normalize_subtree_path  # noqa: E402
 from lib.progress import Progress  # noqa: E402
@@ -63,6 +63,7 @@ def run_pipeline(
     subtree_path: str = ".",
     max_nodes: int = DEFAULT_MAX_NODES,
     max_bytes: int = DEFAULT_MAX_BYTES,
+    batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> dict:
     """Runs T1 -> T2 -> (T3 -> T4 -> [T5 -> T3]*)+ -> T6 -> T7.
 
@@ -107,6 +108,7 @@ def run_pipeline(
         backend=backend,
         iteration=1,
         progress=progress,
+        batch_size=batch_size,
     )
     artifacts["classification.v1.chunks"] = str(chunk_dir / "classifications")
 
@@ -153,6 +155,7 @@ def run_pipeline(
             feedback=approval.get("feedback"),
             iteration=iteration,
             progress=progress,
+            batch_size=batch_size,
         )
         artifacts[f"classification.v{iteration}.chunks"] = str(chunk_dir / "classifications")
 
@@ -224,6 +227,7 @@ def main() -> None:
         help="run the pipeline as a canonical tree rooted at this relative subtree",
     )
     parser.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES)
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument(
         "--auto-approve",
         action="store_true",
@@ -264,6 +268,7 @@ def main() -> None:
         subtree_path=args.subtree,
         max_nodes=args.max_nodes,
         max_bytes=args.max_bytes,
+        batch_size=args.batch_size,
     )
 
     print(f"\nrun_id={result['run_id']}")

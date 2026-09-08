@@ -2,6 +2,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from agent.classify import (  # noqa: E402
@@ -10,6 +12,7 @@ from agent.classify import (  # noqa: E402
     _extract_json,
     _normalize,
     _validate_shape,
+    classify_all,
     classify_manifest,
 )
 from lib.validate import validate_file  # noqa: E402
@@ -134,6 +137,180 @@ def test_ollama_backend_handles_fenced_and_prose_wrapped_response(monkeypatch):
     assert result["confidence"] == 0.95
 
 
+def test_ollama_backend_parses_node_keyed_batch(monkeypatch):
+    nodes = [
+        {"node_id": "n1", "path": "README.md", "type": "file"},
+        {"node_id": "n2", "path": "main.py", "type": "file"},
+    ]
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            payload = [
+                {
+                    "node_id": "n2",
+                    "purpose": "source code",
+                    "category": "source",
+                    "recommended_action": "keep",
+                    "target_path": None,
+                    "confidence": 0.9,
+                    "rationale": "python file",
+                },
+                {
+                    "node_id": "n1",
+                    "purpose": "documentation",
+                    "category": "docs",
+                    "recommended_action": "keep",
+                    "target_path": None,
+                    "confidence": 0.9,
+                    "rationale": "markdown file",
+                },
+            ]
+            return json.dumps({"response": json.dumps(payload)}).encode()
+
+    monkeypatch.setattr("agent.classify.urlopen", lambda request, timeout: _Response())
+    result = OllamaBackend().classify_nodes(nodes, nodes)
+    assert [item["node_id"] for item in result] == ["n1", "n2"]
+
+
+def test_ollama_backend_retries_transport_errors(monkeypatch):
+    node = {"node_id": "n1", "path": "README.md", "type": "file"}
+    calls = 0
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            item = {
+                "node_id": "n1",
+                "purpose": "documentation",
+                "category": "docs",
+                "recommended_action": "keep",
+                "target_path": None,
+                "confidence": 0.9,
+                "rationale": "markdown file",
+            }
+            return json.dumps({"response": json.dumps([item])}).encode()
+
+    def _urlopen(request, timeout):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("temporary connection failure")
+        return _Response()
+
+    monkeypatch.setattr("agent.classify.urlopen", _urlopen)
+    result = OllamaBackend(max_retries=1).classify_nodes([node], [node])
+    assert result[0]["category"] == "docs"
+    assert calls == 2
+
+
+def test_batch_validation_rejects_duplicate_node_ids():
+    from agent.classify import _validate_batch_shape
+
+    node = {"node_id": "n1", "path": "a", "type": "file"}
+    item = {
+        "node_id": "n1",
+        "purpose": "source",
+        "category": "source",
+        "recommended_action": "keep",
+        "target_path": None,
+        "confidence": 0.9,
+        "rationale": "source",
+    }
+    with pytest.raises(ValueError, match="duplicates"):
+        _validate_batch_shape([item, dict(item)], [node])
+
+
+def test_batch_validation_rejects_missing_node_ids():
+    from agent.classify import _validate_batch_shape
+
+    item = {
+        "node_id": "n1",
+        "purpose": "source",
+        "category": "source",
+        "recommended_action": "keep",
+        "target_path": None,
+        "confidence": 0.9,
+        "rationale": "source",
+    }
+    nodes = [
+        {"node_id": "n1", "path": "a", "type": "file"},
+        {"node_id": "n2", "path": "b", "type": "file"},
+    ]
+    with pytest.raises(ValueError, match="missing node_ids"):
+        _validate_batch_shape([item], nodes)
+
+
+def test_batch_validation_rejects_duplicate_input_node_ids():
+    from agent.classify import _validate_batch_shape
+
+    node = {"node_id": "n1", "path": "a", "type": "file"}
+    item = {
+        "node_id": "n1",
+        "purpose": "source",
+        "category": "source",
+        "recommended_action": "keep",
+        "target_path": None,
+        "confidence": 0.9,
+        "rationale": "source",
+    }
+    with pytest.raises(ValueError, match="input batch contains duplicate"):
+        _validate_batch_shape([item], [node, dict(node)])
+
+
+def test_classify_all_uses_configured_batches():
+    class _BatchBackend:
+        def __init__(self):
+            self.batch_sizes = []
+
+        def classify_nodes(self, nodes, all_nodes, feedback=None):
+            del all_nodes, feedback
+            self.batch_sizes.append(len(nodes))
+            return [
+                {
+                    "node_id": node["node_id"],
+                    "purpose": "test",
+                    "category": "unknown",
+                    "recommended_action": "keep",
+                    "target_path": None,
+                    "confidence": 0.5,
+                    "rationale": "test",
+                }
+                for node in nodes
+            ]
+
+        def classify_node(self, node, all_nodes, feedback=None):
+            raise AssertionError("batch method should be used")
+
+    backend = _BatchBackend()
+    snapshot = {
+        "run_id": "batch-run",
+        "nodes": [{"node_id": f"n{i}", "path": f"{i}.txt", "type": "file"} for i in range(5)],
+    }
+    result = classify_all(snapshot, backend, batch_size=2)
+    assert backend.batch_sizes == [2, 2, 1]
+    assert [item["node_id"] for item in result["classifications"]] == [f"n{i}" for i in range(5)]
+
+
+def test_classify_all_rejects_unbounded_batch_size():
+    snapshot = {
+        "run_id": "batch-limit-run",
+        "nodes": [{"node_id": "n1", "path": "1.txt", "type": "file"}],
+    }
+    with pytest.raises(ValueError, match="between 1 and 128"):
+        classify_all(snapshot, HeuristicBackend(), batch_size=129)
+
+
 def test_manifest_classification_is_per_chunk_and_resumable(tmp_path):
     root = tmp_path / "tree"
     root.mkdir()
@@ -162,6 +339,138 @@ def test_manifest_classification_is_per_chunk_and_resumable(tmp_path):
     proposal = render_manifest_proposal(chunks / "manifest.json")
     assert proposal["run_id"] == "chunk-run"
     assert proposal["changes"] == []
+
+
+def test_manifest_classification_resumes_from_batch_checkpoint(tmp_path):
+    root = tmp_path / "tree"
+    root.mkdir()
+    for index in range(5):
+        (root / f"file-{index}.txt").write_text(f"file {index}\n")
+    chunks = tmp_path / "chunks"
+    scan_tree_to_chunks(str(root), "checkpoint-run", chunks, hash_mode="none", max_nodes=10)
+
+    class _InterruptingBackend(HeuristicBackend):
+        def __init__(self, interrupt=True):
+            self.calls = 0
+            self.interrupt = interrupt
+
+        def classify_nodes(self, nodes, all_nodes, feedback=None):
+            self.calls += 1
+            if self.interrupt and self.calls == 2:
+                raise KeyboardInterrupt()
+            return super().classify_nodes(nodes, all_nodes, feedback)
+
+    manifest_path = chunks / "manifest.json"
+    with pytest.raises(KeyboardInterrupt):
+        classify_manifest(
+            manifest_path,
+            backend=_InterruptingBackend(interrupt=True),
+            batch_size=2,
+        )
+
+    manifest = validate_file(manifest_path, "chunk_manifest")
+    partials = list((chunks / "classifications").glob("*.classification.v1.partial.json"))
+    assert len(partials) == 1
+    partial = partials[0]
+    assert manifest["status"]["classification"] == "failed"
+    assert partial.exists()
+    partial_artifact = validate_file(partial, "classification")
+    assert len(partial_artifact["classifications"]) == 2
+
+    outputs = classify_manifest(
+        manifest_path, backend=_InterruptingBackend(interrupt=False), batch_size=2
+    )
+
+    assert len(outputs) == 1
+    assert not partial.exists()
+    manifest = validate_file(manifest_path, "chunk_manifest")
+    assert manifest["status"]["classification"] == "completed"
+    classification = validate_file(outputs[0], "classification")
+    assert len(classification["classifications"]) == 5
+
+
+def test_manifest_checkpoint_rejects_changed_context(tmp_path):
+    root = tmp_path / "tree"
+    root.mkdir()
+    for index in range(3):
+        (root / f"file-{index}.txt").write_text(f"file {index}\n")
+    chunks = tmp_path / "chunks"
+    scan_tree_to_chunks(str(root), "context-run", chunks, hash_mode="none", max_nodes=10)
+
+    class _InterruptingBackend(HeuristicBackend):
+        def __init__(self, interrupt=True):
+            self.calls = 0
+            self.interrupt = interrupt
+
+        def classify_nodes(self, nodes, all_nodes, feedback=None):
+            self.calls += 1
+            if feedback == "first context" and self.interrupt:
+                if self.calls == 1:
+                    return super().classify_nodes(nodes, all_nodes, feedback)
+                raise KeyboardInterrupt()
+            return super().classify_nodes(nodes, all_nodes, feedback)
+
+    manifest_path = chunks / "manifest.json"
+    with pytest.raises(KeyboardInterrupt):
+        classify_manifest(
+            manifest_path,
+            backend=_InterruptingBackend(interrupt=True),
+            feedback="first context",
+            batch_size=2,
+        )
+
+    classify_manifest(
+        manifest_path,
+        backend=HeuristicBackend(),
+        feedback="different context",
+        batch_size=2,
+    )
+
+    manifest = validate_file(manifest_path, "chunk_manifest")
+    assert manifest["status"]["classification"] == "completed"
+
+    classify_manifest(
+        manifest_path,
+        backend=_InterruptingBackend(interrupt=False),
+        feedback="first context",
+        batch_size=2,
+    )
+
+
+def test_manifest_adopts_orphan_final_and_cleans_partial(tmp_path):
+    root = tmp_path / "tree"
+    root.mkdir()
+    (root / "file.txt").write_text("file\n")
+    chunks = tmp_path / "chunks"
+    scan_tree_to_chunks(str(root), "orphan-run", chunks, hash_mode="none", max_nodes=10)
+    manifest_path = chunks / "manifest.json"
+
+    class _ControlledBackend(HeuristicBackend):
+        def __init__(self, fail=False):
+            self.fail = fail
+
+        def classify_nodes(self, nodes, all_nodes, feedback=None):
+            if self.fail:
+                raise AssertionError("orphan final should be adopted")
+            return super().classify_nodes(nodes, all_nodes, feedback)
+
+    outputs = classify_manifest(manifest_path, backend=_ControlledBackend())
+    manifest = validate_file(manifest_path, "chunk_manifest")
+    entry = manifest["chunks"][0]
+    entry.pop("classification")
+    validate_file(chunks / "manifest.json", "chunk_manifest")
+    from lib.validate import write_validated
+
+    write_validated(manifest, "chunk_manifest", manifest_path)
+    partial = outputs[0].with_name(outputs[0].name.replace(".json", ".partial.json"))
+    partial.write_text(outputs[0].read_text())
+
+    recovered = classify_manifest(manifest_path, backend=_ControlledBackend(fail=True))
+
+    assert recovered == outputs
+    assert not partial.exists()
+    manifest = validate_file(manifest_path, "chunk_manifest")
+    assert manifest["chunks"][0]["classification"]["status"] == "completed"
 
 
 def test_manifest_classification_preserves_duplicate_context_across_chunks(tmp_path):

@@ -102,6 +102,9 @@ chunks can be classified independently as soon as they appear.
 classification artifacts under `chunks/classifications/`, and atomically updates
 the manifest with per-chunk and aggregate classification status. The full
 orchestrator uses this same path; it never reassembles a giant snapshot.
+Model-backed classifiers process nodes in configurable batches (`--batch-size`,
+default 32) and still emit one validated classification per node. This avoids
+one model request per node while preserving node-level lineage and output.
 
 The rendered proposal is global even though its inputs are chunked: reconciliation
 rejects conflicting destinations and overlapping source paths before approval.
