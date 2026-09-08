@@ -576,6 +576,7 @@ def _classification_context_hash(
     feedback: str | None,
     iteration: int,
     batch_size: int,
+    duplicate_map: dict[str, list[str]] | None = None,
 ) -> str:
     """Identify the inputs that must remain stable when resuming a checkpoint."""
 
@@ -587,6 +588,7 @@ def _classification_context_hash(
         "feedback": feedback,
         "iteration": iteration,
         "batch_size": batch_size,
+        "duplicate_map": duplicate_map or {},
     }
     return trace.hash_json_artifact(context)
 
@@ -654,6 +656,7 @@ def classify_manifest(
     output_dir: str | Path | None = None,
     progress: Progress | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    dry_run: bool = False,
 ) -> list[Path]:
     """Classify each manifest chunk independently.
 
@@ -668,20 +671,22 @@ def classify_manifest(
     manifest = validate_file(manifest_file, "chunk_manifest")
     chunk_root = manifest_file.parent
     destination = Path(output_dir) if output_dir else chunk_root / "classifications"
-    destination.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        destination.mkdir(parents=True, exist_ok=True)
     entries = manifest["chunks"]
     status = manifest.setdefault("status", {})
-    status.update(
-        {
-            "classification": "in_progress",
-            "total_chunks": len(entries),
-            "completed_chunks": 0,
-            "failed_chunks": 0,
-            "updated_at": trace.now_iso(),
-        }
-    )
-    status.pop("error", None)
-    write_validated(manifest, "chunk_manifest", manifest_file)
+    if not dry_run:
+        status.update(
+            {
+                "classification": "in_progress",
+                "total_chunks": len(entries),
+                "completed_chunks": 0,
+                "failed_chunks": 0,
+                "updated_at": trace.now_iso(),
+            }
+        )
+        status.pop("error", None)
+        write_validated(manifest, "chunk_manifest", manifest_file)
 
     reporter = progress or Progress(quiet=True)
     items = reporter.items("classifying chunks", len(entries))
@@ -705,7 +710,9 @@ def classify_manifest(
             partial = (
                 destination / f"{Path(entry['path']).stem}.classification.v{iteration}.partial.json"
             )
-            context_hash = _classification_context_hash(backend, feedback, iteration, batch_size)
+            context_hash = _classification_context_hash(
+                backend, feedback, iteration, batch_size, duplicate_map
+            )
 
             existing = entry.get("classification")
             if (
@@ -723,6 +730,10 @@ def classify_manifest(
                         "Completed classification context differs; increment --iteration "
                         "to classify with a new context"
                     )
+                if completed.get("input_hash") != trace.hash_json_artifact(chunk):
+                    raise ValueError(
+                        "Completed classification input differs; increment --iteration"
+                    )
                 if trace.hash_json_artifact(completed) != existing.get("content_hash"):
                     raise ValueError(
                         "Completed classification content differs; increment --iteration"
@@ -732,7 +743,8 @@ def classify_manifest(
                     partial.unlink(missing_ok=True)
                     status["completed_chunks"] += 1
                     status["updated_at"] = trace.now_iso()
-                    write_validated(manifest, "chunk_manifest", manifest_file)
+                    if not dry_run:
+                        write_validated(manifest, "chunk_manifest", manifest_file)
                     items.update()
                     continue
 
@@ -762,7 +774,8 @@ def classify_manifest(
                     }
                     status["completed_chunks"] += 1
                     status["updated_at"] = trace.now_iso()
-                    write_validated(manifest, "chunk_manifest", manifest_file)
+                    if not dry_run:
+                        write_validated(manifest, "chunk_manifest", manifest_file)
                     outputs.append(output)
                     items.update()
                     continue
@@ -790,6 +803,8 @@ def classify_manifest(
                     partial.unlink(missing_ok=True)
 
             def checkpoint(classifications: list[dict]) -> None:
+                if dry_run:
+                    return
                 partial_artifact = _classification_artifact(chunk, iteration, classifications)
                 _set_classification_provenance(partial_artifact, entry, context_hash)
                 write_validated(partial_artifact, "classification", partial)
@@ -805,6 +820,10 @@ def classify_manifest(
                 on_batch=checkpoint,
             )
             _set_classification_provenance(result, entry, context_hash)
+            if dry_run:
+                outputs.append(output)
+                items.update()
+                continue
             write_validated(result, "classification", output)
             try:
                 relative_output = output.relative_to(chunk_root).as_posix()
@@ -829,14 +848,17 @@ def classify_manifest(
         status["failed_chunks"] = len(entries) - status["completed_chunks"]
         status["error"] = str(error)
         status["updated_at"] = trace.now_iso()
-        write_validated(manifest, "chunk_manifest", manifest_file)
+        if not dry_run:
+            if not dry_run:
+                write_validated(manifest, "chunk_manifest", manifest_file)
         raise
     finally:
         items.finish()
 
     status["classification"] = "completed"
     status["updated_at"] = trace.now_iso()
-    write_validated(manifest, "chunk_manifest", manifest_file)
+    if not dry_run:
+        write_validated(manifest, "chunk_manifest", manifest_file)
     return outputs
 
 
@@ -873,6 +895,7 @@ def main() -> None:
             feedback=args.feedback,
             progress=Progress(args.quiet),
             batch_size=args.batch_size,
+            dry_run=args.dry_run,
         )
         print(f"classified {len(outputs)} chunks")
         return
@@ -890,11 +913,31 @@ def main() -> None:
         progress=Progress(args.quiet),
         batch_size=args.batch_size,
     )
+    context_hash = _classification_context_hash(
+        backend, args.feedback, args.iteration, args.batch_size
+    )
+    result["provenance"]["classification_context_hash"] = context_hash
 
     out_path = args.out or f"runs/{snapshot['run_id']}/classification.v{args.iteration}.json"
     if args.dry_run:
         print(json.dumps(result, indent=2))
     else:
+        if Path(out_path).exists():
+            existing = validate_file(out_path, "classification")
+            if existing.get("iteration") == args.iteration:
+                if existing.get("input_hash") != trace.hash_json_artifact(snapshot):
+                    raise ValueError(
+                        "Completed classification input differs; increment --iteration"
+                    )
+                if (
+                    existing.get("provenance", {}).get("classification_context_hash")
+                    != context_hash
+                ):
+                    raise ValueError(
+                        "Completed classification context differs; increment --iteration"
+                    )
+                print(f"reused {out_path} ({len(existing['classifications'])} classifications)")
+                return
         write_validated(result, "classification", out_path)
         print(f"wrote {out_path} ({len(result['classifications'])} classifications)")
 

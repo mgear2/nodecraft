@@ -235,6 +235,7 @@ class _ChunkWriter:
         generated_at: str,
         max_nodes: int,
         max_bytes: int,
+        write: bool,
     ) -> None:
         self.root = root
         self.run_id = run_id
@@ -242,6 +243,7 @@ class _ChunkWriter:
         self.generated_at = generated_at
         self.max_nodes = max_nodes
         self.max_bytes = max_bytes
+        self.write = write
         self.nodes: list[dict[str, Any]] = []
         self.byte_count = 0
         self.index = 0
@@ -305,7 +307,7 @@ class _ChunkWriter:
             "nodes": self.nodes,
         }
         filename = f"chunk-{self.index:06d}-{chunk_id[7:19]}.json"
-        if self.out_dir.exists():
+        if self.write:
             write_validated(chunk, "tree_snapshot", self.out_dir / filename)
         self.chunks.append(
             {
@@ -350,6 +352,8 @@ def scan_tree_to_chunks(
     if max_nodes < 1 or max_bytes < 1:
         raise ValueError("max_nodes and max_bytes must be at least 1")
     root = Path(root_path).resolve()
+    if not root.is_dir():
+        raise ValueError(f"scan root does not exist or is not a directory: {root_path}")
     destination = Path(out_dir)
     if write:
         destination.mkdir(parents=True, exist_ok=True)
@@ -370,6 +374,7 @@ def scan_tree_to_chunks(
         generated_at=generated_at,
         max_nodes=max_nodes,
         max_bytes=max_bytes,
+        write=write,
     )
     for node in _iter_nodes(
         root,

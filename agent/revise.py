@@ -17,7 +17,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from agent.classify import HeuristicBackend, LLMBackend, classify_all  # noqa: E402
+from agent.classify import (  # noqa: E402
+    HeuristicBackend,
+    LLMBackend,
+    _classification_context_hash,
+    classify_all,
+)
+from lib import trace  # noqa: E402
 from lib.validate import validate_file, write_validated  # noqa: E402
 
 
@@ -49,9 +55,27 @@ def main() -> None:
     )
 
     out_path = args.out or f"runs/{snapshot['run_id']}/classification.v{args.iteration}.json"
+    context_hash = _classification_context_hash(backend, decision["feedback"], args.iteration, 32)
+    result["provenance"]["classification_context_hash"] = context_hash
     if args.dry_run:
         print(json.dumps(result, indent=2))
     else:
+        if Path(out_path).exists():
+            existing = validate_file(out_path, "classification")
+            if existing.get("iteration") == args.iteration:
+                if existing.get("input_hash") != trace.hash_json_artifact(snapshot):
+                    raise ValueError(
+                        "Completed classification input differs; increment --iteration"
+                    )
+                if (
+                    existing.get("provenance", {}).get("classification_context_hash")
+                    != context_hash
+                ):
+                    raise ValueError(
+                        "Completed classification context differs; increment --iteration"
+                    )
+                print(f"reused {out_path} ({len(existing['classifications'])} classifications)")
+                return
         write_validated(result, "classification", out_path)
         print(f"wrote {out_path} (revised per feedback: {decision['feedback']!r})")
 

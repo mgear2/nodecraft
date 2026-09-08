@@ -135,8 +135,14 @@ def run_pipeline(
         artifacts[f"proposal.v{iteration}"] = str(proposal_path)
 
         # T4 (human gate — via injected callback)
-        approval = approval_callback(proposal)
-        approval.setdefault("proposal_content_hash", trace.hash_json_artifact(proposal))
+        # Give callbacks an isolated copy so approval capture cannot mutate the
+        # proposal that was persisted and will later be executed.
+        approval_input = json.loads(json.dumps(proposal))
+        approval = approval_callback(approval_input)
+        proposal_content_hash = trace.hash_json_artifact(proposal)
+        approval.setdefault("proposal_content_hash", proposal_content_hash)
+        if approval["proposal_content_hash"] != proposal_content_hash:
+            raise ValueError("approval decision does not bind to the persisted proposal content")
         approval.setdefault("change_count", len(proposal["changes"]))
         progress.stage("waiting for approval")
         approval_path = rdir / f"approval_decision.v{iteration}.json"
@@ -148,6 +154,11 @@ def run_pipeline(
 
         # reject -> T5, new iteration (new node instance, not a back-edge;
         # see spec B.3)
+        if iteration >= max_iterations:
+            raise MaxIterationsExceeded(
+                f"Exceeded max_iterations={max_iterations} without approval "
+                f"(run_id={run_id}). See runs/{run_id}/ for full history."
+            )
         iteration += 1
         classify_manifest(
             chunk_dir / "manifest.json",

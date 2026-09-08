@@ -29,8 +29,14 @@ def _select_nodes(snapshot: dict[str, Any], subtree_path: str) -> list[dict[str,
     requested = normalize_subtree_path(subtree_path)
     # Node paths in canonical subtree artifacts are relative to the artifact,
     # while older artifacts may retain the source scope prefix.
+    # Current portable artifacts already contain paths relative to their
+    # declared scope. Legacy artifacts retain the scope prefix. A canonical
+    # root marker makes the distinction unambiguous for nested derivations.
+    node_paths = [normalize_subtree_path(node["path"]) for node in snapshot["nodes"]]
+    is_canonical = source_scope == "." or "." in node_paths
     canonical_nodes = [
-        (node, relative_to_scope(node["path"], source_scope)) for node in snapshot["nodes"]
+        (node, path if is_canonical else relative_to_scope(path, source_scope))
+        for node, path in zip(snapshot["nodes"], node_paths, strict=True)
     ]
     paths = {path for _, path in canonical_nodes}
     subtree = requested

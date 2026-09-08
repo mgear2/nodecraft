@@ -64,12 +64,24 @@ def _reconcile_operations(changes: list[dict[str, Any]]) -> None:
             )
         destinations[destination_key] = change
 
-    previous_source: tuple[str, dict[str, Any]] | None = None
+    # A destination cannot be an ancestor or descendant of another
+    # destination: filesystem moves would otherwise depend on operation order.
+    destination_items = [(_canonical_path(c["to_path"]), c) for c in changes if c.get("to_path")]
+    for index, (left, left_change) in enumerate(destination_items):
+        for right, right_change in destination_items[index + 1 :]:
+            if left == right or left.startswith(right + "/") or right.startswith(left + "/"):
+                raise ValueError(
+                    "overlapping operation destinations "
+                    f"{left!r} ({left_change['node_id']!r}) and "
+                    f"{right!r} ({right_change['node_id']!r})"
+                )
+
     redundant_sources: set[int] = set()
     ordered_sources = sorted(enumerate(sources), key=lambda item: item[1][0])
-    for index, (source, change) in ordered_sources:
-        if previous_source is not None:
-            previous_path, previous_change = previous_source
+    for position, (index, (source, change)) in enumerate(ordered_sources):
+        # Compare against every earlier ancestor, not just the immediately
+        # preceding path in lexical order (e.g. a, a-b, a/child).
+        for _, (previous_path, previous_change) in ordered_sources[:position]:
             if source == previous_path or source.startswith(previous_path + "/"):
                 if (
                     source.startswith(previous_path + "/")
@@ -85,7 +97,6 @@ def _reconcile_operations(changes: list[dict[str, Any]]) -> None:
                     f"{previous_path!r} ({previous_change['node_id']!r}) and "
                     f"{source!r} ({change['node_id']!r})"
                 )
-        previous_source = (source, change)
 
     if redundant_sources:
         changes[:] = [

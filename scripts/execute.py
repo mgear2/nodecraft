@@ -43,6 +43,8 @@ def _safe_path(mount: Path, value: str, *, allow_missing: bool = True) -> Path:
 
 
 def _validate_change(mount: Path, change: dict) -> None:
+    if Path(change["from_path"]).as_posix() == ".":
+        raise ValueError("operations on the mounted root are not supported")
     _safe_path(mount, change["from_path"], allow_missing=True)
     if change["action"] in ("move", "rename") and not change.get("to_path"):
         raise ValueError(f"{change['action']} requires a to_path")
@@ -50,16 +52,15 @@ def _validate_change(mount: Path, change: dict) -> None:
         _safe_path(mount, change["to_path"], allow_missing=True)
 
 
-def _trash_path(mount: Path, trash_dir: Path, from_path: str) -> Path:
+def _trash_path(mount: Path, run_id: str, from_path: str) -> Path:
     """Resolve an implicit archive/delete destination through mount containment."""
-    destination = trash_dir / from_path
-    return _safe_path(mount, str(destination.relative_to(mount)))
+    return _safe_path(mount, str(Path(".trash") / run_id / from_path))
 
 
 def execute_operation(
     mount: Path,
     change: dict,
-    trash_dir: Path,
+    run_id: str,
     permanent_delete: bool,
 ) -> dict:
     action = change["action"]
@@ -92,7 +93,7 @@ def execute_operation(
             to_abs = (
                 _safe_path(mount, change["to_path"])
                 if change.get("to_path")
-                else _trash_path(mount, trash_dir, change["from_path"])
+                else _trash_path(mount, run_id, change["from_path"])
             )
             _ensure_parent(to_abs)
             shutil.move(str(from_abs), str(to_abs))
@@ -108,7 +109,7 @@ def execute_operation(
                     from_abs.unlink()
                 op["to_path"] = None
             else:
-                to_abs = _trash_path(mount, trash_dir, change["from_path"])
+                to_abs = _trash_path(mount, run_id, change["from_path"])
                 _ensure_parent(to_abs)
                 shutil.move(str(from_abs), str(to_abs))
                 op["to_path"] = str(to_abs.relative_to(mount))
@@ -198,19 +199,19 @@ def execute_proposal(
     mount = Path(mount_path).resolve()
     if not mount.is_dir():
         raise ValueError(f"artifact mount must be an existing directory: {mount}")
-    trash_dir = mount / ".trash" / proposal["run_id"]
     for change in proposal["changes"]:
         _validate_change(mount, change)
     source_paths = {
         _safe_path(mount, change["from_path"]).resolve() for change in proposal["changes"]
     }
     seen_destinations: set[str] = set()
+    destination_paths: list[tuple[Path, str]] = []
     for change in proposal["changes"]:
         destination = change.get("to_path")
         if (change["action"] == "archive" and not destination) or (
             change["action"] == "delete" and not permanent_delete
         ):
-            destination_path = _trash_path(mount, trash_dir, change["from_path"])
+            destination_path = _trash_path(mount, proposal["run_id"], change["from_path"])
             destination = str(destination_path.relative_to(mount))
         if destination:
             resolved = _safe_path(mount, destination).resolve()
@@ -222,10 +223,21 @@ def execute_proposal(
                 raise ValueError(f"refusing to overwrite an operation source: {destination!r}")
             if resolved.exists():
                 raise ValueError(f"refusing to overwrite existing destination: {destination!r}")
+            for previous, previous_value in destination_paths:
+                if (
+                    resolved == previous
+                    or resolved in previous.parents
+                    or previous in resolved.parents
+                ):
+                    raise ValueError(
+                        "overlapping operation destinations: "
+                        f"{previous_value!r} and {destination!r}"
+                    )
+            destination_paths.append((resolved, destination))
     started = trace.now_iso()
 
     operations = [
-        execute_operation(mount, change, trash_dir, permanent_delete)
+        execute_operation(mount, change, proposal["run_id"], permanent_delete)
         for change in proposal["changes"]
     ]
 

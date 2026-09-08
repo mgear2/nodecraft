@@ -18,7 +18,11 @@ class HashCache:
             return
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            if data.get("version") == CACHE_VERSION and isinstance(data.get("entries"), dict):
+            if (
+                isinstance(data, dict)
+                and data.get("version") == CACHE_VERSION
+                and isinstance(data.get("entries"), dict)
+            ):
                 self.entries = data["entries"]
         except (OSError, json.JSONDecodeError):
             self.entries = {}
